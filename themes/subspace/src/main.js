@@ -1055,22 +1055,25 @@ const DEMO = location.hash.includes('demo')
 if (DEMO) {
   const dev = $('dev')
   const PROG = {
-    claude: ['读取 saver.ts', '搜索 "sessionStatus"', '编辑 main.ts', 'Bash npm test', 'Bash npm run typecheck', '子代理：查 Codex 日志格式', '思考中…'],
-    codex: ['exec rg -n "saver" src', 'apply_patch', 'exec npm run build', 'exec gh pr view 10', '推理中…', 'exec npx vitest run'],
-    dsh: ['bash npm test', 'read_file agents.js', 'edit_file saver.js', '思考中…', 'web_search zstd frame format'],
+    claude: ZH ? ['读取 saver.ts', '搜索 "sessionStatus"', '编辑 main.ts', 'Bash npm test', 'Bash npm run typecheck', '子代理：查 Codex 日志格式', '思考中…'] : ['Read saver.ts', 'Search "sessionStatus"', 'Edit main.ts', 'Bash npm test', 'Bash npm run typecheck', 'Subagent: check Codex log format', 'Thinking…'],
+    codex: ['exec rg -n "saver" src', 'apply_patch', 'exec npm run build', 'exec gh pr view 10', ZH ? '推理中…' : 'Reasoning…', 'exec npx vitest run'],
+    dsh: ['bash npm test', 'read_file agents.js', 'edit_file saver.js', ZH ? '思考中…' : 'Thinking…', 'web_search zstd frame format'],
   }
   const demo = []
   let seq = 0
   const add = (kind, name) => demo.push({ id: `demo:${++seq}`, kind, name, status: 'running', progress: PROG[kind][0], startedAt: Date.now() })
-  const finish = (s, status) => { if (s && isLive(s)) Object.assign(s, { status, endedAt: Date.now(), progress: status === 'done' ? '本轮完成' : '被中断' }) }
+  const finish = (s, status) => { if (s && isLive(s)) Object.assign(s, { status, endedAt: Date.now(), progress: status === 'done' ? (ZH ? '本轮完成' : 'Turn finished') : ZH ? '被中断' : 'Stopped' }) }
+  const D = ZH
+    ? { a: '亚空间跃迁屏保动画', b: 'api · PR #10 review', c: '给 dsh 插件补测试', d: '樱花树 3D 资产效果测试', wait: '要执行 git push，等你点头', wait2: '要改 .env，等你点头' }
+    : { a: 'Subspace screen saver animation', b: 'api · PR #10 review', c: 'Add tests to the dsh plugin', d: 'Cherry tree 3D asset test', wait: 'Wants to run git push', wait2: 'Wants to edit .env' }
   const SCRIPT = [
-    [5, () => { add('claude', '亚空间跃迁屏保动画'); add('codex', 'api · PR #10 review') }],
-    [12, () => add('dsh', '给 dsh 插件补测试')],
-    [18, () => add('claude', '樱花树 3D 资产效果测试')],
-    [34, () => { const s = demo.find((x) => x.kind === 'codex' && x.status === 'running'); if (s) Object.assign(s, { status: 'waiting', progress: '要执行 git push，等你点头' }) }],
+    [5, () => { add('claude', D.a); add('codex', D.b) }],
+    [12, () => add('dsh', D.c)],
+    [18, () => add('claude', D.d)],
+    [34, () => { const s = demo.find((x) => x.kind === 'codex' && x.status === 'running'); if (s) Object.assign(s, { status: 'waiting', progress: D.wait }) }],
     [41, () => { const s = demo.find((x) => x.status === 'waiting'); if (s) Object.assign(s, { status: 'running', progress: 'exec git push' }) }],
     [52, () => finish(demo.find((x) => x.kind === 'codex'), 'done')],
-    [62, () => finish(demo.find((x) => x.name.startsWith('樱花')), 'aborted')],
+    [62, () => finish(demo.find((x) => x.name === D.d), 'aborted')],
     [74, () => finish(demo.find(isLive), 'done')],
   ]
   let demoT = 0, idx = 0, auto = true, progT = 0
@@ -1087,7 +1090,9 @@ if (DEMO) {
     setSessions(demo)
     $('devState').textContent = state
   }
-  const NAMES = { claude: ['重构 IM 限流', '写屏保单测', '修 room 光照'], codex: ['迁移 vite 6', 'review PR #11', '补 README'], dsh: ['整理 changelog', '修 CI', '写插件文档'] }
+  const NAMES = ZH
+    ? { claude: ['重构 IM 限流', '写屏保单测', '修 room 光照'], codex: ['迁移 vite 6', 'review PR #11', '补 README'], dsh: ['整理 changelog', '修 CI', '写插件文档'] }
+    : { claude: ['Refactor rate limiter', 'Write screen saver tests', 'Fix room lighting'], codex: ['Migrate to Vite 6', 'review PR #11', 'Update README'], dsh: ['Tidy the changelog', 'Fix CI', 'Write plugin docs'] }
   dev.addEventListener('click', (e) => {
     const a = e.target.closest('button')?.dataset.a
     if (!a) return
@@ -1096,7 +1101,7 @@ if (DEMO) {
     if (a === 'claude' || a === 'codex' || a === 'dsh') add(a, pick(NAMES[a]))
     if (a === 'done') finish(live[0], 'done')
     if (a === 'abort') finish(live[0], 'aborted')
-    if (a === 'wait' && live[0]) Object.assign(live[0], { status: 'waiting', progress: '要改 .env，等你点头' })
+    if (a === 'wait' && live[0]) Object.assign(live[0], { status: 'waiting', progress: D.wait2 })
     if (a === 'all') live.forEach((s) => finish(s, 'done'))
   })
   addEventListener('keydown', (e) => { if (e.key === 'd' || e.key === 'D') dev.classList.toggle('hide') })

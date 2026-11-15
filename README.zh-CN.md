@@ -8,6 +8,12 @@
 
 [English](README.md) · [给 AI 看的 llms.txt](llms.txt) · [主题接口](docs/themes.md)
 
+![亚空间跃迁主题：跃迁中列出 Claude Code、Codex、DeepSeek Harness 会话](docs/images/subspace-zh.jpg)
+
+| 时钟（自带） | 亚空间跃迁（单独的主题包） |
+| --- | --- |
+| ![时钟主题：照着 macOS 锁屏，日期时间、电池、Wi-Fi、「使用触控 ID 或输入密码」](docs/images/basic-zh.jpg) | three.js 跃迁隧道（上图）：有代理在跑就进亚空间，左边列出每个会话，用各家自己的图标标出来。 |
+
 ## 跟系统锁屏、系统屏保、壁纸有什么不一样
 
 一句话：**系统锁屏和屏保是给「电脑上什么都不该跑」的时候用的；dsh-screensaver 是给「代理得接着跑，只是屏幕要盖上」的时候用的。**

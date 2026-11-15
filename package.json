@@ -22,7 +22,7 @@
     "themes/basic",
     "cordis.patch.yml",
     "llms.txt",
-    "docs",
+    "docs/themes.md",
     "README.zh-CN.md",
     "LICENSE"
   ],

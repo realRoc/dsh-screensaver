@@ -10,9 +10,11 @@ with `npx`.
 
 [中文说明](README.zh-CN.md) · [For AI agents: llms.txt](llms.txt) · [Theme API](docs/themes.md)
 
+![Subspace Jump theme: Claude Code, Codex and DeepSeek Harness sessions listed during a warp jump](docs/images/subspace.jpg)
+
 | Clock (built in) | Subspace Jump (separate theme package) |
 | --- | --- |
-| A macOS-style lock screen: date and time, battery, Wi-Fi, "Touch ID or Enter Password". | A three.js warp tunnel: when agents are running it jumps into subspace and lists each session. |
+| ![Clock theme: a macOS-style lock screen with date, time, battery, Wi-Fi and "Touch ID or Enter Password"](docs/images/basic-zh.jpg) | A three.js warp tunnel (above): when agents are running it jumps into subspace and lists each session with its own product icon. |
 
 ## Why not the macOS screen saver, the lock screen, or a wallpaper?
 
