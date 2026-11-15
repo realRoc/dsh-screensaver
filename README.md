@@ -57,6 +57,13 @@ Themes are separate packages. Install only the ones you want:
 dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspace"
 ```
 
+No git on the machine, or you prefer a fixed release? Install the packaged release instead:
+
+```bash
+dsh plugin --profile web add https://github.com/realRoc/dsh-screensaver/releases/latest/download/dsh-screensaver.tgz
+dsh plugin --profile web add https://github.com/realRoc/dsh-screensaver/releases/latest/download/dsh-screensaver-theme-subspace.tgz
+```
+
 ### Without dsh
 
 ```bash

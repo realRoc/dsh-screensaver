@@ -1,6 +1,6 @@
 {
   "name": "dsh-screensaver-theme-subspace",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Subspace Jump theme for dsh-screensaver: a three.js warp-tunnel screen saver that jumps into subspace while your Claude Code, Codex or DeepSeek Harness agents are running and lists each live session.",
   "type": "module",
   "files": [

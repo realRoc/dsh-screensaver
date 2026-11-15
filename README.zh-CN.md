@@ -51,6 +51,13 @@ DeepSeek Harness 桌面版把 `web` 换成 `desktop`。装好后重启 dsh。第
 dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspace"
 ```
 
+电脑上没装 git，或者想装固定的发布版本，可以直接装 GitHub Release 里打好的包：
+
+```bash
+dsh plugin --profile web add https://github.com/realRoc/dsh-screensaver/releases/latest/download/dsh-screensaver.tgz
+dsh plugin --profile web add https://github.com/realRoc/dsh-screensaver/releases/latest/download/dsh-screensaver-theme-subspace.tgz
+```
+
 不装 dsh 也能用：
 
 ```bash
