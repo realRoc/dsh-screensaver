@@ -59,8 +59,8 @@ describe('合盖不睡', () => {
   })
 
   it('sudoers 规则只放行 disablesleep 的两条，用户名带怪字符就不写', () => {
-    const rule = sudoersRule('wuyupeng')
-    expect(rule).toContain('wuyupeng ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 1, /usr/bin/pmset -a disablesleep 0\n')
+    const rule = sudoersRule('alice')
+    expect(rule).toContain('alice ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 1, /usr/bin/pmset -a disablesleep 0\n')
     expect(rule.split('\n').filter((l) => l && !l.startsWith('#'))).toHaveLength(1)
     for (const bad of ['a b', 'x,ALL', 'u\nALL ALL=(ALL) ALL', '', '-x']) expect(() => safeUser(bad)).toThrow()
   })
