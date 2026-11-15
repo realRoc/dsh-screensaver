@@ -1,0 +1,23 @@
+# dsh-screensaver 的 bundle patch：装上插件后 dsh 启动时自动叠进配置树。
+#
+# 1) dsh-screensaver：宿主插件，后台起屏保进程（Electron，不进程序坞），按 ⌃⌥⌘L 开屏保
+# 2) dsh-screensaver/command：/screensaver 命令（开屏保、看主题、合盖不睡）
+# 3) dsh-screensaver/tool：screensaver 工具，用户说「我走开一下，帮我盖上屏幕」时代理自己开
+#
+# 改配置：在 profile 的 cordis.patch.yml（~/.dsh/profiles/<profile>/cordis.patch.yml）里写一条，整段替换 config：
+#   - id: dsh-screensaver
+#     config:
+#       theme: subspace
+#       idleMinutes: 10
+#       lidAwake: true
+- insert:
+    - id: dsh-screensaver
+      name: dsh-screensaver
+      config:
+        theme: basic
+        idleMinutes: 0
+        lidAwake: false
+    - id: dsh-screensaver-command
+      name: dsh-screensaver/command
+    - id: dsh-screensaver-tool
+      name: dsh-screensaver/tool

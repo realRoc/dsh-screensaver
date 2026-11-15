@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<!-- 亚空间屏保的页面模板：scripts/build.mjs 把 main.js（连同 three.js）打包内联进来、图标换成 data: 地址，
+     输出到主题包根目录的 index.html。主题在沙盒 iframe 里跑，什么都不能从外面加载。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:">
+<title>亚空间</title>
+<style>
+  :root {
+    --hud: rgba(190, 225, 255, 0.94);
+    --dim: rgba(170, 210, 255, 0.52);
+    --faint: rgba(170, 210, 255, 0.28);
+    --line: rgba(120, 190, 255, 0.32);
+    --ok: #7ee2a8;
+    --warn: #ffc46b;
+    --bad: #ff8a80;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--hud);
+    font: 13px/1.45 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: screen; }
+  #vignette { position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, 0.6) 100%); }
+
+  /* ---------- 左侧：会话日志 ---------- */
+  #log { position: fixed; left: 3.4vw; top: 50%; width: min(400px, 34vw); transform: translateY(-50%);
+    padding: 16px 18px 14px 20px; border-left: 1px solid var(--line);
+    background: linear-gradient(90deg, rgba(3, 12, 28, 0.62), rgba(3, 12, 28, 0.18) 70%, rgba(3, 12, 28, 0));
+    opacity: 0; transition: opacity 1.4s ease; will-change: transform; }
+  #log.on { opacity: 1; }
+  #log::before, #log::after { content: ""; position: absolute; left: -1px; width: 14px; height: 1px; background: var(--hud); }
+  #log::before { top: 0; } #log::after { bottom: 0; }
+  #log header { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.16em; color: var(--dim); margin-bottom: 12px; }
+  #log header b { color: var(--hud); font-weight: 600; letter-spacing: 0.12em; }
+  #log header .pulse { width: 6px; height: 6px; border-radius: 50%; background: #6cc6ff; box-shadow: 0 0 10px #6cc6ff; animation: pulse 1.6s infinite; }
+  #log.calm header .pulse { background: var(--ok); box-shadow: 0 0 10px var(--ok); animation: none; }
+  #log ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
+  #log li { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: start;
+    transition: opacity 0.8s, transform 0.8s; animation: rowIn 0.7s ease both; }
+  #log li.done, #log li.aborted { opacity: 0.5; }
+  .chip { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; margin-top: 1px;
+    background: rgba(255, 255, 255, 0.06); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+  /* 三家自己的官方图标：Claude 是托盘图标的星芒（染成 Claude 橙），Codex 是 Codex 的 App 图标，
+     DeepSeek Harness 是它网页版的黑色鲸鱼（放在白底圆角块上，跟 App 图标一样） */
+  .chip.claude i { width: 15px; height: 15px; background: #D97757; -webkit-mask: url(__ICON_CLAUDE__) center / contain no-repeat; mask: url(__ICON_CLAUDE__) center / contain no-repeat; }
+  .chip.codex { background: none; box-shadow: none; overflow: hidden; }
+  .chip.codex i { width: 22px; height: 22px; display: block; background: url(__ICON_CODEX__) center / cover no-repeat; }
+  .chip.dsh { background: #fff; box-shadow: none; }
+  .chip.dsh i { width: 17px; height: 17px; display: block; background: url(__ICON_DSH__) center / contain no-repeat; }
+  .name { font-size: 13.5px; color: #eaf4ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prog { font: 11.5px/1.5 var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .prog .caret { color: #6cc6ff; margin-right: 5px; }
+  .prog.fresh { animation: fresh 0.9s ease; }
+  .meta { text-align: right; font: 11px/1.5 var(--mono); color: var(--faint); white-space: nowrap; }
+  .st { display: block; font-family: -apple-system, "PingFang SC", sans-serif; font-size: 11px; letter-spacing: 0.06em; }
+  .st.running { color: #8fd3ff; } .st.waiting { color: var(--warn); } .st.done { color: var(--ok); } .st.aborted { color: var(--bad); }
+  #log footer { margin-top: 13px; padding-top: 9px; border-top: 1px dashed rgba(120, 190, 255, 0.18);
+    font: 11px/1.5 var(--mono); color: var(--faint); letter-spacing: 0.04em; }
+
+  /* ---------- 锁定框、提示（日期时间在屏保外壳右上角，照着菜单栏） ---------- */
+  #lock { position: fixed; left: 0; top: 0; width: 120px; height: 120px; opacity: 0; pointer-events: none; }
+  #lock i { position: absolute; width: 16px; height: 16px; border: 1.5px solid #8fe8ff; filter: drop-shadow(0 0 4px #4fc3ff); }
+  #lock i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; }
+  #lock i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; }
+  #lock i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; }
+  #lock i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; }
+  #lock span { position: absolute; left: 50%; top: calc(100% + 10px); transform: translateX(-50%); white-space: nowrap;
+    font: 11px/1.4 var(--mono); color: #aef0ff; letter-spacing: 0.12em; text-shadow: 0 0 8px rgba(80, 200, 255, 0.8); }
+  #banner { position: fixed; left: 50%; top: 17vh; transform: translateX(-50%); font-size: 13px; letter-spacing: 0.6em;
+    color: #dff3ff; text-shadow: 0 0 14px rgba(110, 200, 255, 0.9); opacity: 0; transition: opacity 0.9s; white-space: nowrap; }
+  #banner.on { opacity: 1; }
+
+  /* 副屏只放画面 */
+  body.secondary #log, body.secondary #banner, body.secondary #lock { display: none; }
+  /* 纯享（外壳 30 秒没人动时发来）：播报、横幅、锁定框淡掉，只剩画面；!important 压过逐帧写的行内 opacity */
+  body.pure #log, body.pure #banner, body.pure #lock { opacity: 0 !important; transition: opacity 1.2s ease; }
+
+  /* ---------- 演示面板（地址带 #demo 时按 D 打开） ---------- */
+  #dev { position: fixed; right: 16px; bottom: 16px; width: 228px; padding: 12px; border-radius: 10px;
+    background: rgba(10, 16, 28, 0.82); border: 1px solid rgba(255, 255, 255, 0.1); color: #cfe0f5; font-size: 12px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px; backdrop-filter: blur(6px); }
+  #dev.hide { display: none; }
+  #dev .row { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; }
+  #dev .row b { font-weight: 600; }
+  #devState { font: 11px var(--mono); color: #8fd3ff; }
+  #dev button { appearance: none; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.05);
+    color: inherit; font: inherit; padding: 6px 4px; border-radius: 6px; cursor: pointer; }
+  #dev button:hover { background: rgba(255, 255, 255, 0.12); }
+  #dev label { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  #dev .tip { grid-column: 1 / -1; color: rgba(207, 224, 245, 0.45); font-size: 11px; }
+
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  @keyframes rowIn { from { opacity: 0; transform: translateX(-12px); } }
+  @keyframes fresh { from { color: #e8f6ff; text-shadow: 0 0 8px rgba(120, 210, 255, 0.9); } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="vignette"></div>
+<div id="flash"></div>
+
+<aside id="log">
+  <header><span class="pulse"></span><b id="logTitle"></b><span id="logSub"></span></header>
+  <ul id="sessions"></ul>
+  <footer id="logFoot"></footer>
+</aside>
+
+<div id="lock"><i></i><i></i><i></i><i></i><span id="lockText"></span></div>
+<div id="banner"></div>
+
+<div id="dev" class="hide">
+  <div class="row"><b>演示面板</b><span id="devState"></span></div>
+  <button data-a="claude">+ Claude Code</button>
+  <button data-a="codex">+ Codex</button>
+  <button data-a="dsh">+ DeepSeek Harness</button>
+  <button data-a="done">完成一个</button>
+  <button data-a="abort">中断一个</button>
+  <button data-a="wait">等你确认</button>
+  <button data-a="all">全部结束</button>
+  <div class="tip">D 显示 / 隐藏 · 手动操作会停掉自动演示</div>
+</div>
+
+<script>/*__SCRIPT__*/</script>
+</body>
+</html>

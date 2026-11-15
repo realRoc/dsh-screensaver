@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src 'self'">
+  <title>dsh-screensaver</title>
+  <style>
+    /* 背景留一点点透明：整块不透明的话，被盖住的浏览器会以为自己被藏起来，定时器、动画都降频 */
+    html, body { margin: 0; height: 100%; overflow: hidden; background: rgba(8, 10, 16, 0.985); cursor: none; user-select: none; }
+    body.awake { cursor: default; }
+    /* 主题只管画，不收键鼠：键鼠都留给外壳用来解锁 */
+    #theme { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+    /* 跟系统锁屏一样：底部正中一行小字，离底边 7%（desk-unlock 的指纹图标摸到才出来，在这行字上面） */
+    #hint {
+      position: fixed; left: 0; right: 0; bottom: 7vh; text-align: center; white-space: nowrap;
+      color: rgba(255, 255, 255, 0.72); font: 500 13px/18px -apple-system, "PingFang SC", sans-serif; letter-spacing: 0.01em;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); transition: opacity 0.3s;
+    }
+    #hint:empty { opacity: 0; }
+    /* 纯享：进屏保 30 秒没人动，底部那行字、右上角状态栏都淡掉（主题那边同时藏会话播报），只剩画面 */
+    #hint, #status { transition: opacity 1.2s ease; }
+    body.pure #hint, body.pure #status { opacity: 0; }
+    /* 右上角：电池、Wi-Fi、日期时间，位置、大小、写法照着系统菜单栏（「11月15日 周日 下午6:10」） */
+    #status {
+      position: fixed; top: 6px; right: 14px; height: 24px; display: flex; align-items: center; gap: 13px;
+      color: #fff; font: 500 13px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums;
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+    }
+    #status[hidden], #status [hidden] { display: none; }
+    #batt { display: flex; align-items: center; gap: 6px; }
+    #status svg { display: block; overflow: visible; }
+    #clock { margin-left: 5px; white-space: nowrap; letter-spacing: 0.01em; font-variant-numeric: normal; }
+    #clock span + span { margin-left: 0.55em; }
+  </style>
+</head>
+<body>
+  <iframe id="theme" sandbox="allow-scripts" tabindex="-1"></iframe>
+  <div id="status" hidden>
+    <div id="batt" hidden>
+      <span id="pct"></span>
+      <svg width="27" height="13" viewBox="0 0 27 13" aria-hidden="true">
+        <defs>
+          <!-- 充电时在电池上抠出闪电，闪电四周留一圈缝 -->
+          <mask id="boltCut" maskUnits="userSpaceOnUse" x="-2" y="-2" width="31" height="17">
+            <rect x="-2" y="-2" width="31" height="17" fill="#fff" />
+            <path id="boltShape" d="M13.4 0.6 6.9 7.4h4.3l-1.3 5 6.5-6.8h-4.3z" fill="#000" stroke="#000" stroke-width="2.4" stroke-linejoin="round" />
+          </mask>
+        </defs>
+        <g id="battBody">
+          <rect x="0.5" y="0.5" width="23" height="12" rx="3.6" fill="none" stroke="currentColor" stroke-opacity="0.42" />
+          <path d="M25 4.3c.9.3 1.5 1.2 1.5 2.2s-.6 1.9-1.5 2.2z" fill="currentColor" fill-opacity="0.42" />
+          <rect id="battFill" x="2" y="2" width="20" height="9" rx="2.1" fill="currentColor" />
+        </g>
+        <path id="bolt" d="M13.4 0.6 6.9 7.4h4.3l-1.3 5 6.5-6.8h-4.3z" fill="currentColor" hidden />
+      </svg>
+    </div>
+    <svg id="wifi" width="18" height="13" viewBox="0 0 18 13" aria-hidden="true" hidden>
+      <g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
+        <path class="bar3" d="M1.9 4.9a10 10 0 0 1 14.2 0" />
+        <path class="bar2" d="M4.8 7.8a5.9 5.9 0 0 1 8.4 0" />
+      </g>
+      <path class="bar1" d="M9 12.3 6.9 10.2a3 3 0 0 1 4.2 0z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round" />
+      <path id="wifiSlash" d="M3.2 1.2 14.8 12.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" hidden />
+    </svg>
+    <div id="clock"><span id="clockD"></span><span id="clockT"></span></div>
+  </div>
+  <div id="hint"></div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

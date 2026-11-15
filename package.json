@@ -1,0 +1,82 @@
+{
+  "name": "dsh-screensaver",
+  "version": "0.1.0",
+  "description": "A lock-screen-style screen saver for macOS that keeps AI coding agents (Claude Code, Codex, DeepSeek Harness) running while you step away: Touch ID unlock, no sleep, optional lid-closed awake, and themes that show your live agent sessions. DeepSeek Harness (dsh) plugin, also runs standalone.",
+  "type": "module",
+  "main": "app/main.js",
+  "bin": {
+    "dsh-screensaver": "bin/dsh-screensaver.js"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./command": "./lib/command.js",
+    "./tool": "./lib/tool.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "app",
+    "bin",
+    "lib",
+    "native",
+    "themes/basic",
+    "cordis.patch.yml",
+    "llms.txt",
+    "docs",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/dsh-screensaver.js",
+    "now": "node bin/dsh-screensaver.js --now",
+    "test": "vitest run",
+    "build:themes": "npm --prefix themes/subspace run build"
+  },
+  "dependencies": {
+    "electron": "^45.2.1"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "screensaver",
+    "screen-saver",
+    "lock-screen",
+    "macos",
+    "touch-id",
+    "ai-agent",
+    "coding-agent",
+    "claude-code",
+    "codex",
+    "keep-awake",
+    "caffeinate",
+    "electron"
+  ],
+  "license": "MIT",
+  "author": "realRoc",
+  "homepage": "https://github.com/realRoc/dsh-screensaver#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/realRoc/dsh-screensaver.git"
+  },
+  "bugs": "https://github.com/realRoc/dsh-screensaver/issues",
+  "engines": {
+    "node": ">=22"
+  },
+  "os": [
+    "darwin"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.2.1-rc.2": "compatible"
+      }
+    }
+  },
+  "devDependencies": {
+    "vitest": "^5.0.5"
+  }
+}
