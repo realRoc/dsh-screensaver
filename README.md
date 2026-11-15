@@ -1,14 +1,15 @@
-# dsh-screensaver
+# dsh-screensaver: a macOS screen saver that keeps AI coding agents running while you're away
 
-**A lock-screen-style screen saver for macOS that keeps your AI coding agents running while you step away.**
-Touch the Touch ID sensor to unlock. While it is up, the Mac does not sleep, the display stays on, and (optionally)
-closing the lid does not put the Mac to sleep. Themes can show your live **Claude Code**, **OpenAI Codex** and
-**DeepSeek Harness** sessions: which ones are running, waiting for your approval, done or stopped.
+You step away for coffee, a meeting or lunch. Claude Code, Codex or DeepSeek Harness is still working, and you don't
+want people reading your screen. dsh-screensaver covers it with a lock screen that looks like the Mac's own; touch
+Touch ID to unlock when you're back. While it's up the Mac doesn't sleep, the display stays on, and it can stay awake
+with the lid closed too. Themes can show each live **Claude Code**, **OpenAI Codex** and **DeepSeek Harness** session:
+running, waiting for your approval, finished or stopped.
 
 It is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh) plugin, and it also runs on its own
 with `npx`.
 
-[中文说明](README.zh-CN.md) · [For AI agents: llms.txt](llms.txt) · [Theme API](docs/themes.md)
+[中文说明](README.zh-CN.md) · [llms.txt (summary for AI assistants)](llms.txt) · [Theme API](docs/themes.md) · [Visual assets license](LICENSE-ASSETS.md)
 
 ![Subspace Jump theme: Claude Code, Codex and DeepSeek Harness sessions listed during a warp jump](docs/images/subspace.jpg)
 
@@ -18,8 +19,8 @@ with `npx`.
 
 ## Why not the macOS screen saver, the lock screen, or a wallpaper?
 
-Short answer: **the system lock screen and screen saver are built for when nothing should be running.
-dsh-screensaver is built for when your agents should keep running and you just want the screen covered.**
+The lock screen and the system screen saver assume the Mac can rest once you leave. dsh-screensaver assumes your agents
+keep working and you only want the screen covered.
 
 | | macOS lock screen (⌃⌘Q) | macOS screen saver | Wallpaper / live wallpaper | `caffeinate` / Amphetamine | **dsh-screensaver** |
 | --- | --- | --- | --- | --- | --- |
@@ -32,9 +33,9 @@ dsh-screensaver is built for when your agents should keep running and you just w
 | Unlock | Touch ID or password | Key press (+ password) | n/a | n/a | **Just touch Touch ID**, or press any key / click for Touch ID or the login password |
 | Shows what your agents are doing | No | No | No | No | **Yes** (themes that opt in: names, current step, running / waiting / done / stopped) |
 
-**Which one should I use?** If you only run CLI agents and need real security (a café, an office), use ⌃⌘Q; you can still
-turn on lid-closed awake with `/screensaver lid on` first. If you run computer-use or browser agents, or you just step
-away at home and want the screen covered while everything keeps working, use dsh-screensaver.
+In a café or a shared office where you need real security and only run terminal agents, use ⌃⌘Q (run
+`/screensaver lid on` first if you also want lid-closed awake). At home, or when you run computer-use or browser agents,
+use dsh-screensaver.
 
 > dsh-screensaver is **not a security boundary**: holding the power button still works, and it does not replace the
 > macOS login. It keeps people walking by from reading your screen or typing into your agents.
@@ -108,7 +109,7 @@ Standalone, pass the same fields as JSON: `DSH_SCREENSAVER_CONFIG='{"theme":"sub
 | Clock | `basic` | built in | No |
 | Subspace Jump | `subspace` | `github:realRoc/dsh-screensaver#path:/themes/subspace` | Yes |
 
-More themes are on the way. A theme is a folder with an `index.html` (runs in a sandboxed iframe, draws only) and a
+More themes are coming. Themes are visual works licensed CC BY-NC-SA 4.0 (no commercial use). A theme is a folder with an `index.html` (runs in a sandboxed iframe, draws only) and a
 `saver.json`. Put your own in `~/.dsh/plugins-data/dsh-screensaver/themes/<id>/`, or publish it as an npm package with
 `"dsh-screensaver": { "theme": "." }` in its `package.json`. See [docs/themes.md](docs/themes.md).
 
@@ -174,7 +175,9 @@ DSH_SCREENSAVER_DEBUG=1 npm run now   # log page console messages
 
 ## License
 
-MIT. Third-party notices: [themes/subspace/THIRD_PARTY_NOTICES.md](themes/subspace/THIRD_PARTY_NOTICES.md).
+Code is MIT ([LICENSE](LICENSE)). All visual assets, meaning every theme under `themes/` and the screenshots under
+`docs/images/`, are **CC BY-NC-SA 4.0: no commercial use** ([LICENSE-ASSETS.md](LICENSE-ASSETS.md)). Third-party notices:
+[themes/subspace/THIRD_PARTY_NOTICES.md](themes/subspace/THIRD_PARTY_NOTICES.md).
 
 <!-- Keywords: screen saver for AI coding agents, keep Claude Code running when away, keep Codex running, prevent Mac sleep
 while an agent runs, macOS lock screen alternative, Touch ID screen saver, keep Mac awake with lid closed, caffeinate

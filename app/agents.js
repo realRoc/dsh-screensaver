@@ -1,4 +1,4 @@
-// 本机在跑的 AI 编程代理会话（Claude Code / Codex / DeepSeek Harness）：屏保开着时每 2 秒看一眼，
+// 本机在跑的 AI coding agent 会话（Claude Code / Codex / DeepSeek Harness）：屏保开着时每 2 秒看一眼，
 // 给「亚空间跃迁」这类主题显示「哪些任务还在跑、跑到哪了」。
 //
 // 只读本机文件，不连网、不改任何东西：
@@ -30,7 +30,7 @@ const S = {
     write: '写入',
     grep: '搜索',
     glob: '找文件',
-    agent: '子代理：',
+    agent: 'subagent：',
     web: '查资料',
     reply: '回复中…',
     think: '思考中…',
@@ -714,7 +714,7 @@ export class AgentWatcher {
       const events = log && this.dshEvents(log)
       if (!events) continue
       const f = dshFold(events, this.lang)
-      if (f.child) continue // 子代理的会话算在父会话里
+      if (f.child) continue // subagent 的会话算在父会话里
       out.push({
         id: key,
         kind: 'dsh',

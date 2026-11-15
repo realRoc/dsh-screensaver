@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 不装 dsh 也能用：
 //   npx github:realRoc/dsh-screensaver            常驻，按 ⌃⌥⌘L 开屏保（Ctrl+C 退出）
-//   npx github:realRoc/dsh-screensaver --now      马上开屏保，解开后退出（适合让 AI 代理在你走开前跑一下）
+//   npx github:realRoc/dsh-screensaver --now      马上开屏保，解开后退出（适合让 AI agent 在你走开前跑一下）
 //   npx github:realRoc/dsh-screensaver --now subspace
 // 配置用环境变量 DSH_SCREENSAVER_CONFIG（JSON，字段同 dsh 插件配置）。
 import { launch } from '../lib/launcher.js'

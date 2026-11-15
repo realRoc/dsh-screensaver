@@ -1,5 +1,8 @@
 # Theme API
 
+The theme API (this document, the shell and the message formats) is MIT: build your own theme on it and license it
+however you like. The themes shipped in this repo are CC BY-NC-SA 4.0 (see [LICENSE-ASSETS.md](../LICENSE-ASSETS.md)).
+
 A theme is a folder:
 
 ```

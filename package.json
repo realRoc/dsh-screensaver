@@ -24,7 +24,8 @@
     "llms.txt",
     "docs/themes.md",
     "README.zh-CN.md",
-    "LICENSE"
+    "LICENSE",
+    "LICENSE-ASSETS.md"
   ],
   "scripts": {
     "start": "node bin/dsh-screensaver.js",
@@ -52,7 +53,7 @@
     "caffeinate",
     "electron"
   ],
-  "license": "MIT",
+  "license": "(MIT AND CC-BY-NC-SA-4.0)",
   "author": "realRoc",
   "homepage": "https://github.com/realRoc/dsh-screensaver#readme",
   "repository": {

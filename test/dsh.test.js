@@ -47,7 +47,7 @@ describe('事件折叠', () => {
     expect(dshFold([...base, ev('tool/call', { callId: 'q', name: 'ask_user_question' })], 'en')).toMatchObject({ waiting: true })
   })
 
-  it('轮次结束：completed 算完成，aborted / error 算中断；子代理会话标出来', () => {
+  it('轮次结束：completed 算完成，aborted / error 算中断；subagent 会话标出来', () => {
     const run = (kind) => dshFold([header(), ev('turn/start', { turn: 1 }), ev('turn/end', { turn: 1, reason: { kind } })], 'en')
     expect(run('completed')).toMatchObject({ running: false, ended: 'done', progress: 'Turn finished' })
     expect(run('aborted')).toMatchObject({ running: false, ended: 'aborted' })

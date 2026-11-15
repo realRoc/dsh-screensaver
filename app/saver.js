@@ -1,9 +1,9 @@
-// 屏保本体：人临时离开、Claude Code / Codex / DeepSeek Harness 之类的 AI 编程代理还在跑时用，不走系统的屏保和锁屏。
+// 屏保本体：人临时离开、Claude Code / Codex / DeepSeek Harness 之类的 AI coding agent 还在跑时用，不走系统的屏保和锁屏。
 //
 // - 每块屏幕盖一层最顶上的窗口（app/shell/），主屏那块开 kiosk：藏程序坞和菜单栏、禁 Cmd+Tab、禁强制退出。
 //   先进 simpleFullScreen（老式全屏，不新开桌面空间）再开 kiosk，不然 kiosk 会走原生全屏，把屏保放进单独的空间。
 // - 窗口不是完全不透明（网页背景留一点点透明）：完全挡住的话 Chrome 会把被挡的窗口当成隐藏，定时器和动画降频，
-//   被挡住的浏览器里的代理（扩展驱动的那种）也跟着降频。
+//   被挡住的浏览器里的 agent（靠扩展驱动的那种）也跟着降频。
 // - 屏保开着时不让系统睡、也不关屏；配置了 lidAwake 再把合盖睡眠关掉（lidawake.js）。
 // - 解锁两条路（都是 native/unlock/ 的 desk-unlock，LocalAuthentication）：
 //   1. 直接摸 Touch ID：屏保一开就起 `desk-unlock --listen`。它在主屏上盖一层看不见的窗口（屏保上一层），
@@ -14,7 +14,7 @@
 //      验证框在 1000 层，跟屏保同一层，验证期间把屏保降到 pop-up-menu（101 层），验证框肯定在上面。没解开再回到第 1 条。
 // - 主屏右上角跟系统菜单栏一样放电池、Wi-Fi、日期时间：`desk-unlock --status` 读（IOKit + CoreWLAN），每 20 秒一次。
 // - 屏保里放什么由主题决定（themes.js 找到的目录，沙盒 iframe 里跑）。
-//   saver.json 写了 "sessions": true 的主题，屏保开着时才去读本机代理会话（agents.js），推给它显示。
+//   saver.json 写了 "sessions": true 的主题，屏保开着时才去读本机 agent 会话（agents.js），推给它显示。
 //
 // 这不是安全边界：长按电源键之类的拦不住。它挡的是路过的人看屏幕、碰键盘。
 import { execFile, spawn } from 'node:child_process'

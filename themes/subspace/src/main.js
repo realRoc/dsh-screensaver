@@ -672,7 +672,7 @@ function activate(name) {
 // ============================================================ 状态机
 //   space ──(有会话在跑)──▶ enter(8.5s) ──▶ tunnel(无限) ──(全部结束，宽限 GRACE 秒)──▶ exit(6.5s) ──▶ space
 const ENTER_DUR = 8.5, ENTER_CROSS = 7.1, EXIT_DUR = 6.5, EXIT_CROSS = 5.2
-// 全部结束后再等一会儿才出来：Claude Code 两轮之间、等子代理时会短暂变成空闲
+// 全部结束后再等一会儿才出来：Claude Code 两轮之间、等 subagent 时会短暂变成空闲
 const GRACE = location.hash.includes('demo') ? 3 : 15
 let state = 'space', stateT = 0, idleT = 0, voyageStart = 0, voyageEnd = 0, now = 0
 let demoTick = () => {}
@@ -1055,7 +1055,7 @@ const DEMO = location.hash.includes('demo')
 if (DEMO) {
   const dev = $('dev')
   const PROG = {
-    claude: ZH ? ['读取 saver.ts', '搜索 "sessionStatus"', '编辑 main.ts', 'Bash npm test', 'Bash npm run typecheck', '子代理：查 Codex 日志格式', '思考中…'] : ['Read saver.ts', 'Search "sessionStatus"', 'Edit main.ts', 'Bash npm test', 'Bash npm run typecheck', 'Subagent: check Codex log format', 'Thinking…'],
+    claude: ZH ? ['读取 saver.ts', '搜索 "sessionStatus"', '编辑 main.ts', 'Bash npm test', 'Bash npm run typecheck', 'subagent：查 Codex 日志格式', '思考中…'] : ['Read saver.ts', 'Search "sessionStatus"', 'Edit main.ts', 'Bash npm test', 'Bash npm run typecheck', 'Subagent: check Codex log format', 'Thinking…'],
     codex: ['exec rg -n "saver" src', 'apply_patch', 'exec npm run build', 'exec gh pr view 10', ZH ? '推理中…' : 'Reasoning…', 'exec npx vitest run'],
     dsh: ['bash npm test', 'read_file agents.js', 'edit_file saver.js', ZH ? '思考中…' : 'Thinking…', 'web_search zstd frame format'],
   }
