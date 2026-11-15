@@ -1,6 +1,6 @@
 # dsh-screensaver-theme-subspace · Subspace Jump
 
-A three.js theme for [dsh-screensaver](../../README.md). Three suns orbit in normal space; as soon as one of your
+A three.js theme for [dsh-screensaver](https://github.com/realRoc/dsh-screensaver). Three suns orbit in normal space; as soon as one of your
 Claude Code, Codex or DeepSeek Harness sessions starts running, the camera locks onto a portal and jumps into a
 subspace tunnel, with each live session listed on the left (name, current step, running / waiting / done / stopped).
 When everything is finished it leaves subspace and returns to the three suns.
@@ -27,4 +27,4 @@ npm run build      # rebuilds index.html from src/ and assets/ (commit index.htm
 npm run demo
 ```
 
-CC BY-NC-SA 4.0 (no commercial use). See [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSE-ASSETS.md](../../LICENSE-ASSETS.md).
+CC BY-NC-SA 4.0 (no commercial use). See [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSE-ASSETS.md](https://github.com/realRoc/dsh-screensaver/blob/main/LICENSE-ASSETS.md).

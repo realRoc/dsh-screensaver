@@ -84,5 +84,9 @@
         "0.2.1-rc.2": "compatible"
       }
     }
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   }
 }
