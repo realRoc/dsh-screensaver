@@ -18,6 +18,8 @@
 //
 // 这不是安全边界：长按电源键之类的拦不住。它挡的是路过的人看屏幕、碰键盘。
 import { execFile, spawn } from 'node:child_process'
+import { appendFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { app, BrowserWindow, globalShortcut, ipcMain, powerMonitor, powerSaveBlocker, screen, systemPreferences } from 'electron'
 import { lineReader } from '../lib/lines.js'
 import { AgentWatcher } from './agents.js'
@@ -98,6 +100,12 @@ export class Screensaver {
   }
 
   say(text) {
+    // DSH_SCREENSAVER_DEBUG：同时写进数据目录的 debug.log（程序退得快时 stdout 来不及刷出去）
+    if (process.env.DSH_SCREENSAVER_DEBUG) {
+      try {
+        appendFileSync(join(dataDir(), 'debug.log'), `${new Date().toISOString()} ${text}\n`)
+      } catch {}
+    }
     if (this.hooks.say) this.hooks.say(text)
     else console.log(text)
   }
@@ -322,6 +330,7 @@ export class Screensaver {
     child.on('exit', (code) => {
       if (this.listener !== child) return // 我们自己停的
       this.listener = null
+      if (process.env.DSH_SCREENSAVER_DEBUG) this.say(`[debug] Touch ID listener exited ${code}: ${out.trim()}`)
       if (code !== 0) console.error(`[dsh-screensaver] Touch ID listener exited ${code}: ${out.trim()}`)
       if (code === 0) void this.stop()
       else if (code === 3) void this.unlock() // 有人按键 / 点了一下：弹系统验证框，可以输密码
@@ -346,6 +355,7 @@ export class Screensaver {
   /** 关屏保（验证过了才调；退出程序时也调） */
   async stop() {
     const was = this.active
+    if (process.env.DSH_SCREENSAVER_DEBUG && was) this.say(`[debug] stop from ${new Error().stack.split('\n').slice(2, 4).join(' <- ').trim()}`)
     await this.stopListening()
     if (this.statusTimer) clearInterval(this.statusTimer)
     this.statusTimer = null

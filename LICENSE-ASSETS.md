@@ -8,13 +8,13 @@
 | Path | What | License |
 | --- | --- | --- |
 | `themes/**` (every theme: `basic` Clock, `subspace` Subspace Jump, and future themes in this repo) | The theme's visual design and everything that draws it: HTML, CSS, scenes, shaders, animation, generated `index.html` | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
-| `docs/images/**` | Screenshots | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
+| `docs/images/**`, `assets/icon.png` | Screenshots, plugin icon | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | Everything else: `app/`, `lib/`, `bin/`, `native/`, `test/`, docs text | The screen saver engine, dsh plugin, Touch ID helper, session detection, theme API | [MIT](LICENSE) |
 
 | 路径 | 内容 | 授权 |
 | --- | --- | --- |
 | `themes/**`（本仓库所有主题：基础版「时钟」、「亚空间跃迁」，以及以后加进来的） | 主题的视觉设计和画出它的一切：HTML、CSS、场景、着色器、动画、打包出来的 `index.html` | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) |
-| `docs/images/**` | 截图 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) |
+| `docs/images/**`、`assets/icon.png` | 截图、插件图标 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) |
 | 其余：`app/`、`lib/`、`bin/`、`native/`、`test/`、文档文字 | 屏保引擎、dsh 插件、Touch ID 小程序、会话识别、主题接口 | [MIT](LICENSE) |
 
 ## You may / 你可以

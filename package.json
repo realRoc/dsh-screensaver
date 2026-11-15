@@ -2,6 +2,7 @@
   "name": "dsh-screensaver",
   "version": "0.1.0",
   "description": "A lock-screen-style screen saver for macOS that keeps AI coding agents (Claude Code, Codex, DeepSeek Harness) running while you step away: Touch ID unlock, no sleep, optional lid-closed awake, and themes that show your live agent sessions. DeepSeek Harness (dsh) plugin, also runs standalone.",
+  "icon": "assets/icon.png",
   "type": "module",
   "main": "app/main.js",
   "bin": {
@@ -12,7 +13,9 @@
     "./command": "./lib/command.js",
     "./tool": "./lib/tool.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./assets/icon.png"
   },
   "files": [
     "app",
@@ -25,7 +28,9 @@
     "docs/themes.md",
     "README.zh-CN.md",
     "LICENSE",
-    "LICENSE-ASSETS.md"
+    "LICENSE-ASSETS.md",
+    "locale",
+    "assets"
   ],
   "scripts": {
     "start": "node bin/dsh-screensaver.js",
@@ -35,6 +40,9 @@
   },
   "dependencies": {
     "electron": "^45.2.1"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.5"
   },
   "keywords": [
     "dsh",
@@ -76,8 +84,5 @@
         "0.2.1-rc.2": "compatible"
       }
     }
-  },
-  "devDependencies": {
-    "vitest": "^5.0.5"
   }
 }
