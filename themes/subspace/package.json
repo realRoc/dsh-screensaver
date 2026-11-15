@@ -8,7 +8,8 @@
     "saver.json",
     "README.md",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "cordis.patch.yml"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -39,5 +40,14 @@
     "type": "git",
     "url": "git+https://github.com/realRoc/dsh-screensaver.git",
     "directory": "themes/subspace"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
   }
 }

@@ -1,0 +1,2 @@
+# 主题包不往 dsh 配置里加东西；写个空 patch 只是让 dsh 把它当插件层装，不报 "declares no dsh.bundle"
+[]
