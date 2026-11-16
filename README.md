@@ -15,7 +15,7 @@ with `npx`.
 
 | Clock (built in) | Subspace Jump (separate theme package) |
 | --- | --- |
-| ![Clock theme: a macOS-style lock screen with date, time, battery, Wi-Fi and "Touch ID or Enter Password"](docs/images/basic-zh.jpg) | A three.js warp tunnel (above): when agents are running it jumps into subspace and lists each session with its own product icon. |
+| ![Clock theme: a macOS-style lock screen with date, time, battery, Wi-Fi and "Touch ID or Enter Password"](docs/images/basic-zh.jpg) | A three.js warp tunnel (above): when agents are running it jumps into subspace and lists each session with its own product icon. Inside, it drifts between a nebula storm, a vortex of ocean waves and a tunnel of Gaussian splats. |
 
 ## Why not the macOS screen saver, the lock screen, or a wallpaper?
 

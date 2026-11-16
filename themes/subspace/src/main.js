@@ -4,11 +4,15 @@
 //
 //   常规宇宙(space) ──有会话在跑──▶ 进入亚空间(enter, 8.5s) ──▶ 跃迁(tunnel, 不限时) ──全部结束──▶ 脱离亚空间(exit, 6.5s) ──▶ 常规宇宙
 //   进出都不切白屏：入口 / 出口是一扇「窗」，里面画的就是另一边的场景，镜头穿过去两边画面接得上。
+//   跃迁里有几种画风（星云雷暴 / 浪涌龙卷 / 高斯粒子），隔一阵换一种：换的时候新画风从隧道前方远处长出来，
+//   交界是一段被啃出来的亮边（粒子画风是烧成轮廓和余烬），镜头飞过交界就到了新画风里，不是整屏淡入淡出。
 import * as THREE from 'three'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+import { createVortex } from './vortex.js'
+import { createSplats } from './splats.js'
 
 // ============================================================ 文字（屏保外壳给 ?lang=zh|en，跟系统语言）
 const ZH = new URLSearchParams(location.search).get('lang') !== 'en'
@@ -31,6 +35,7 @@ const TX = ZH
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x))
 const lerp = (a, b, t) => a + (b - a) * t
 const seg = (t, a, b) => clamp((t - a) / (b - a))
+const smooth = (a, b, x) => { const t = seg(x, a, b); return t * t * (3 - 2 * t) }
 const easeIn = (t) => t * t * t
 const easeOut = (t) => 1 - Math.pow(1 - t, 3)
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
@@ -100,6 +105,7 @@ addEventListener('resize', () => {
   renderer.getDrawingBufferSize(resV)
   rt.setSize(resV.x, resV.y)
   uRes.value.copy(resV)
+  vortex.setSize(resV.x, resV.y)
 })
 
 function glowTexture(stops) {
@@ -422,6 +428,8 @@ spaceScene.add(portal)
 
 // ============================================================ 跃迁隧道
 const TUN_R = 14, TUN_L = 420
+// 每种画风在隧道上的权重：s < x 时是 z，s > y 时是 w，中间平滑过渡（换画风时交界就在 x..y 这一段）
+const STYLE_GLSL = `uniform vec4 uSW; float styleW(float s){ return mix(uSW.z, uSW.w, smoothstep(uSW.x, uSW.y, s)); }`
 const BEND_GLSL = `vec2 bend(float s){ return vec2(sin(s*0.011)*14.0 + sin(s*0.023+1.3)*8.0, cos(s*0.009)*12.0 + sin(s*0.017+0.4)*9.0)*uAmp; }`
 function bend(s, amp) {
   return [(Math.sin(s * 0.011) * 14 + Math.sin(s * 0.023 + 1.3) * 8) * amp, (Math.cos(s * 0.009) * 12 + Math.sin(s * 0.017 + 0.4) * 9) * amp]
@@ -443,14 +451,16 @@ const tunU = {
   uTime: { value: 0 }, uTravel: { value: 0 }, uAmp: { value: 0.6 }, uTwist: { value: 0.001 }, uIntensity: { value: 1 }, uOpen: { value: 0.1 }, uFlash: { value: 0 },
   uDeep: { value: pal.deep }, uMid: { value: pal.mid }, uHi: { value: pal.hi }, uGlow: { value: pal.glow },
 }
+const STYLES = ['nebula', 'vortex', 'splat']
+const styleU = Object.fromEntries(STYLES.map((k) => [k, { value: new THREE.Vector4(0, 1, 0, 0) }]))
 const TUN_VERT = NOISE + `
   uniform float uTravel, uAmp, uTime, uRate, uRadius;
-  varying float vAngle, vS, vDepth;
+  varying float vAngle, vS, vDepth, vAbs;
   ${BEND_GLSL}
   void main(){
     vec3 p = position; float d = -p.z;
     vAngle = atan(p.y, p.x); vS = d + uTravel*uRate; vDepth = d;
-    float s = d + uTravel;
+    float s = d + uTravel; vAbs = s;
     float wob = snoise(vec3(cos(vAngle)*1.3, sin(vAngle)*1.3, s*0.022))*0.26 + snoise(vec3(s*0.008, 3.0, uTime*0.04))*0.16;
     p.xy *= uRadius*(1.0 + wob);
     p.xy += bend(s) - bend(uTravel);
@@ -459,11 +469,11 @@ const TUN_VERT = NOISE + `
 // 所有旋转都朝同一个方向、很慢：花纹随时间转 + 沿隧道的螺旋（uTwist 只取正值）
 const wall = new THREE.Mesh(tubeGeo(), new THREE.ShaderMaterial({
   side: THREE.BackSide, transparent: true, depthWrite: false,
-  uniforms: { ...tunU, uRate: { value: 1 }, uRadius: { value: TUN_R } },
+  uniforms: { ...tunU, uRate: { value: 1 }, uRadius: { value: TUN_R }, uSW: styleU.nebula },
   vertexShader: TUN_VERT,
-  fragmentShader: NOISE + `
+  fragmentShader: NOISE + STYLE_GLSL + `
     uniform float uTime, uIntensity, uTwist, uOpen, uFlash; uniform vec3 uDeep, uMid, uHi, uGlow;
-    varying float vAngle, vS, vDepth;
+    varying float vAngle, vS, vDepth, vAbs;
     void main(){
       float a = vAngle + vS*uTwist + uTime*0.035;
       vec3 q = vec3(cos(a)*1.4, sin(a)*1.4, vS*0.028);
@@ -482,27 +492,41 @@ const wall = new THREE.Mesh(tubeGeo(), new THREE.ShaderMaterial({
       float a2 = smoothstep(gt, gt + 0.12, n) * (1.0 - uOpen*0.25);
       a2 = mix(a2, 1.0, fog*(1.0 - uOpen)*0.85);
       a2 *= smoothstep(-8.0, 6.0, vDepth);
+      // 换画风：云墙按云的花纹一块块被啃掉，啃口一圈亮边
+      float sw = styleW(vAbs), th = sw*1.12 - 0.06, n01 = clamp(n*0.5 + 0.5, 0.0, 1.0);
+      float edge = exp(-pow((th - n01)/0.05, 2.0))*smoothstep(0.0, 0.04, sw)*(1.0 - smoothstep(0.96, 1.0, sw))*smoothstep(-8.0, 6.0, vDepth);
+      a2 = max(a2*smoothstep(n01 - 0.06, n01 + 0.06, th), edge*0.85);
+      col += uHi*edge*0.9;
       gl_FragColor = vec4(col*uIntensity, a2);
     }`,
 }))
 const wisps = new THREE.Mesh(tubeGeo(), new THREE.ShaderMaterial({
   side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-  uniforms: { ...tunU, uRate: { value: 1.45 }, uRadius: { value: TUN_R * 0.6 } },
+  uniforms: { ...tunU, uRate: { value: 1.45 }, uRadius: { value: TUN_R * 0.6 }, uSW: styleU.nebula },
   vertexShader: TUN_VERT,
-  fragmentShader: NOISE + `
+  fragmentShader: NOISE + STYLE_GLSL + `
     uniform float uTime, uIntensity, uTwist, uOpen; uniform vec3 uMid, uHi;
-    varying float vAngle, vS, vDepth;
+    varying float vAngle, vS, vDepth, vAbs;
     void main(){
       float a = vAngle + vS*uTwist*1.2 + uTime*0.045;
       vec3 q = vec3(cos(a)*2.0, sin(a)*2.0, vS*0.045);
       float n = fbm(q + fbm(q*0.7)*1.2);
       float m = smoothstep(0.12, 0.75, n);
       vec3 col = mix(uMid, uHi, m*m)*m*m*0.4;
-      col *= smoothstep(0.0, 22.0, vDepth)*(1.0 - smoothstep(140.0, 380.0, vDepth))*(1.0 - uOpen*0.85);
+      col *= smoothstep(0.0, 22.0, vDepth)*(1.0 - smoothstep(140.0, 380.0, vDepth))*(1.0 - uOpen*0.85)*styleW(vAbs);
       gl_FragColor = vec4(col*uIntensity, 1.0);
     }`,
 }))
 tunScene.add(wall, wisps)
+
+// 另外两种画风：浪涌龙卷（距离场光线步进，见 vortex.js）、高斯粒子（见 splats.js）
+const vortex = createVortex({ NOISE, BEND_GLSL, STYLE_GLSL, tunU })
+vortex.uniforms.uSW = styleU.vortex
+vortex.setSize(resV.x, resV.y)
+const splats = createSplats({ NOISE, BEND_GLSL, STYLE_GLSL, tunU, count: 26000, TUN_L, radius: TUN_R * 1.15 })
+splats.uniforms.uSW = styleU.splat
+tunScene.add(vortex.show, splats.mesh)
+const layers = { nebula: [wall, wisps], vortex: [vortex.show], splat: [splats.mesh] }
 
 const endGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }))
 endGlow.scale.setScalar(110)
@@ -547,12 +571,13 @@ function trackPos(s, x, y, out) {
 
 // ============================================================ 亚空间的天：雷云 + 闪电（通道有缝 / 开阔时看得到）
 const flashU = { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }
+const skyK = { value: 1 } // 粒子画风下天空压暗一点，粒子之间的缝里不至于太亮
 const sky = new THREE.Mesh(new THREE.SphereGeometry(1500, 64, 32), new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false,
-  uniforms: { uTime: tunU.uTime, uTravel: tunU.uTravel, uDeep: tunU.uDeep, uMid: tunU.uMid, uHi: tunU.uHi, uGlow: tunU.uGlow, uFlash: flashU },
+  uniforms: { uTime: tunU.uTime, uTravel: tunU.uTravel, uDeep: tunU.uDeep, uMid: tunU.uMid, uHi: tunU.uHi, uGlow: tunU.uGlow, uFlash: flashU, uK: skyK },
   vertexShader: `varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
   fragmentShader: NOISE + `
-    uniform float uTime, uTravel; uniform vec3 uDeep, uMid, uHi, uGlow; uniform vec4 uFlash[3]; varying vec3 vDir;
+    uniform float uTime, uTravel, uK; uniform vec3 uDeep, uMid, uHi, uGlow; uniform vec4 uFlash[3]; varying vec3 vDir;
     void main(){
       vec3 d = normalize(vDir);
       vec3 q = d*2.0 + vec3(0.0, 0.0, uTravel*0.0016);
@@ -568,7 +593,7 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(1500, 64, 32), new THREE.Sha
         float k = max(dot(d, uFlash[i].xyz), 0.0);
         col += uHi*uFlash[i].w*(pow(k, 40.0)*1.6 + pow(k, 7.0)*0.25)*(0.25 + dens);
       }
-      gl_FragColor = vec4(col, 1.0);
+      gl_FragColor = vec4(col*uK, 1.0);
     }`,
 }))
 sky.renderOrder = -10
@@ -613,17 +638,17 @@ function fireBolt() {
   b.life = rand(0.28, 0.5)
   b.age = 0
 }
-function updateBolts(dt, open) {
+function updateBolts(dt, open, k = 1) {
   boltIn -= dt
-  if (boltIn <= 0) { fireBolt(); boltIn = rand(0.6, 3.2) * (1.5 - open) }
+  if (boltIn <= 0 && k > 0.2) { fireBolt(); boltIn = rand(0.6, 3.2) * (1.5 - open) }
   let total = 0
   bolts.forEach((b, i) => {
     b.age += dt
     const t = b.age / b.life
     const I = t < 1 ? (1 - t) * (0.55 + 0.45 * Math.round(Math.random())) : 0
-    b.line.material.color.copy(pal.hi).lerp(_white, 0.5).multiplyScalar(I * 6)
-    b.line.visible = I > 0.01
-    const fl = t < 1.6 ? Math.max(0, 1 - t / 1.6) : 0
+    b.line.material.color.copy(pal.hi).lerp(_white, 0.5).multiplyScalar(I * 6 * k)
+    b.line.visible = I * k > 0.01
+    const fl = (t < 1.6 ? Math.max(0, 1 - t / 1.6) : 0) * k
     flashU.value[i].set(b.dir.x, b.dir.y, b.dir.z, fl * (0.6 + 0.4 * I))
     total += fl
   })
@@ -678,6 +703,14 @@ let state = 'space', stateT = 0, idleT = 0, voyageStart = 0, voyageEnd = 0, now 
 let demoTick = () => {}
 let speed = 0, streakTravel = 0, tunTravel = 0, tunSpeed = 70, needRT = null
 
+const _palTo = new THREE.Color(), _hA = {}, _hB = {}
+// 色相走近的那一边（琥珀到紫经过红、品红，不绕一整圈彩虹）
+function lerpHue(c, to, k) {
+  c.getHSL(_hA); to.getHSL(_hB)
+  let dh = _hB.h - _hA.h
+  dh -= Math.round(dh)
+  return c.setHSL((_hA.h + dh * k + 1) % 1, lerp(_hA.s, _hB.s, k), lerp(_hA.l, _hB.l, k))
+}
 let palNow = 'blue', palFrom = PALETTES.blue, palTo = PALETTES.blue, palT = 1, palDur = 8, palNext = 30
 function setPalette(name, dur = 8) {
   palFrom = { deep: pal.deep.toArray(), mid: pal.mid.toArray(), hi: pal.hi.toArray(), glow: pal.glow.toArray() }
@@ -689,9 +722,58 @@ function setPalette(name, dur = 8) {
 function applyPalette(dt) {
   palT = Math.min(1, palT + dt / palDur)
   const k = easeInOut(palT)
-  for (const key of ['deep', 'mid', 'hi', 'glow']) pal[key].setRGB(...palFrom[key].map((v, i) => lerp(v, palTo[key][i], k)))
+  // 亮色按色相过渡，不然琥珀到紫这种对色中间会经过一段发灰；最暗的那个按 RGB（近黑色的色相不稳）
+  for (const key of ['deep', 'mid', 'hi', 'glow']) {
+    if (key === 'deep') pal.deep.setRGB(...palFrom.deep.map((v, i) => lerp(v, palTo.deep[i], k)))
+    else lerpHue(pal[key].setRGB(...palFrom[key]), _palTo.setRGB(...palTo[key]), k)
+  }
 }
 setPalette('blue', 0.001); applyPalette(1)
+
+// ============================================================ 画风
+// 每种画风配哪些调色板、巡航快慢（粒子画风慢一点，好看清烧起来、复原的过程）
+const STYLE_INFO = {
+  nebula: { palettes: ['blue', 'violet', 'teal'], speed: 1 },
+  vortex: { palettes: ['amber', 'amber', 'teal'], speed: 0.95 },
+  splat: { palettes: ['violet', 'blue', 'teal', 'amber'], speed: 0.72 },
+}
+const STYLE_PICK = location.hash.match(/style=(\w+)/)?.[1]
+const styleWeight = (k, s) => { const v = styleU[k].value; return lerp(v.z, v.w, smooth(v.x, v.y, s)) }
+let styleNow = 'nebula', styleFrom = null, styleEnd = 0, styleNext = 60, burnIn = 12
+function setStyleInstant(name) {
+  for (const k of STYLES) { const on = k === name ? 1 : 0; styleU[k].value.set(0, 1, on, on) }
+  styleNow = name
+  styleFrom = null
+}
+// 换画风：新画风从前方 ahead 处开始，到 ahead + width 处完全接手；调色板在镜头飞到交界的这段时间里慢慢变过去
+function startStyle(name, ahead = 340, width = 170) {
+  if (name === styleNow || styleFrom || !STYLE_INFO[name]) return false
+  const front = tunTravel + ahead
+  styleU[styleNow].value.set(front, front + width, 1, 0)
+  styleU[name].value.set(front, front + width, 0, 1)
+  styleFrom = styleNow
+  styleNow = name
+  styleEnd = front + width
+  const pals = STYLE_INFO[name].palettes.filter((k) => k !== palNow)
+  if (state !== 'exit' && pals.length) setPalette(pick(pals), (ahead + width * 0.5) / Math.max(tunSpeed, 30))
+  palNext = rand(35, 55)
+  if (name === 'splat') burnIn = rand(9, 14)
+  return true
+}
+function stepStyle(dt) {
+  // 交界整个过了镜头（连身后那一截也过去了），旧画风就彻底关掉
+  if (styleFrom && tunTravel - 14 > styleEnd) { styleU[styleFrom].value.set(0, 1, 0, 0); styleFrom = null }
+  if (state === 'tunnel' && !STYLE_PICK && (styleNext -= dt) <= 0) {
+    if (startStyle(pick(STYLES.filter((k) => k !== styleNow)))) styleNext = rand(50, 80)
+  }
+  // 粒子画风里隔一阵引燃一次
+  if (styleNow === 'splat' && !styleFrom && state === 'tunnel' && !splats.burning && (burnIn -= dt) <= 0) {
+    splats.ignite(tunTravel)
+    burnIn = rand(16, 26)
+  }
+  splats.tick(dt)
+  for (const k of STYLES) { const v = styleU[k].value; layers[k].forEach((o) => (o.visible = v.z > 0 || v.w > 0)) }
+}
 
 // 慢慢游走的随机参数：弯曲度、螺旋、速度（都限制在不晕的范围，螺旋只往一个方向）
 const walk = { amp: [0.55, 0.55], twist: [0.001, 0.001], cruise: [70, 70], open: [0.1, 0.1] }
@@ -711,7 +793,10 @@ function stepWalk(dt) {
 
 function setupTunnel() {
   tunTravel = rand(0, 5000) // 每次进来都是没见过的一段
-  setPalette(pick(['blue', 'blue', 'violet', 'teal']), 0.001)
+  setStyleInstant(STYLE_INFO[STYLE_PICK] ? STYLE_PICK : pick(['nebula', 'nebula', 'vortex', 'splat']))
+  styleNext = rand(40, 65)
+  burnIn = rand(10, 16)
+  setPalette(styleNow === 'nebula' ? pick(['blue', 'blue', 'violet', 'teal']) : pick(STYLE_INFO[styleNow].palettes), 0.001)
   applyPalette(1)
   palNext = rand(30, 50)
   b0 = bend(tunTravel, tunU.uAmp.value)
@@ -732,21 +817,28 @@ function tunnelTick(dt, { surge = 1, ampMul = 1 } = {}) {
   palNext -= dt
   if (state === 'tunnel' && palNext <= 0) {
     palNext = rand(35, 55)
-    setPalette(pick(Object.keys(PALETTES).filter((k) => k !== palNow)), 10)
+    const pals = STYLE_INFO[styleNow].palettes.filter((k) => k !== palNow)
+    if (!styleFrom && pals.length) setPalette(pick(pals), 10)
   }
   applyPalette(dt)
-  tunSpeed = walk.cruise[0] * surge
+  const sAhead = tunTravel + 40, sFar = tunTravel + 160
+  const styleSpeed = STYLES.reduce((acc, k) => acc + styleWeight(k, sAhead) * STYLE_INFO[k].speed, 0)
+  tunSpeed = walk.cruise[0] * styleSpeed * surge
   tunTravel += tunSpeed * dt
   tunU.uTravel.value = tunTravel
   tunU.uAmp.value = walk.amp[0] * ampMul
   tunU.uTwist.value = walk.twist[0]
   b0 = bend(tunTravel, tunU.uAmp.value)
+  vortex.uniforms.uB0.value.set(b0[0], b0[1])
+  splats.uniforms.uB0.value.set(b0[0], b0[1])
+  stepStyle(dt)
+  skyK.value = 1 - 0.55 * styleWeight('splat', sFar)
   tunScene.background.copy(pal.glow).multiplyScalar(0.55)
   const bg = bend(tunTravel + 300, tunU.uAmp.value)
   endGlow.position.set(bg[0] - b0[0], bg[1] - b0[1], -300)
   endGlow.material.color.copy(pal.glow)
   tunU.uOpen.value = walk.open[0]
-  updateBolts(dt, walk.open[0])
+  updateBolts(dt, walk.open[0], styleWeight('nebula', sFar))
 }
 
 function setState(s) {
@@ -843,7 +935,7 @@ function update(dt) {
     streakU.uOpacity.value = 0.4 * seg(t, 3.4, 6.2)
     streakU.uColor.value.setRGB(0.45, 0.7, 1)
     streakU.uLen.value = speed * 0.1
-    bloomK = lerp(0.55, 0.85, go)
+    bloomK = lerp(0.55, 0.85, go) * (1 - 0.6 * styleWeight('vortex', tunTravel + 120) * seg(t, 2.0, 4.0))
     // 隧道那边一直在跑（窗户里看得到）
     tunU.uIntensity.value = t < ENTER_CROSS ? 1 + 0.45 * easeIn(seg(t, 5.2, ENTER_CROSS)) : lerp(1.45, 1, easeOut(seg(t, ENTER_CROSS, ENTER_DUR)))
     tunnelTick(dt)
@@ -870,13 +962,13 @@ function update(dt) {
     if (!exiting) tunU.uIntensity.value = lerp(tunU.uIntensity.value, 1, 1 - Math.exp(-dt))
     speed = tunSpeed
     fov = exiting ? lerp(86, 110, easeIn(seg(t, 1.6, EXIT_CROSS))) : 86
-    bloomK = 0.7
+    bloomK = 0.7 * (1 - 0.65 * styleWeight('vortex', tunTravel + 120) - 0.3 * styleWeight('splat', tunTravel + 120)) // 龙卷整片都亮，泛光开大了会糊成一团
     streakU.uRadius.value = 10.5
     streakU.uOpacity.value = exiting ? 0.65 : 0.35
     streakU.uColor.value.copy(pal.hi)
     streakU.uLen.value = speed * 0.09
     tunnelPose(camera)
-    endGlow.material.opacity = (exiting ? 1 - seg(t, 1, 3) : 1) * (0.55 + Math.sin(now * 2.3) * 0.08) * (1 - walk.open[0] * 0.6)
+    endGlow.material.opacity = (exiting ? 1 - seg(t, 1, 3) : 1) * (0.55 + Math.sin(now * 2.3) * 0.08) * (1 - walk.open[0] * 0.6) * (1 - 0.7 * styleWeight('vortex', tunTravel + 300))
 
     if (exiting) {
       // 0–2.6s 变琥珀色、尽头张开出口；2.0–5.2s 冲向出口；5.2s 穿过去就是三体那边
@@ -990,6 +1082,7 @@ function setRender(p, low) {
   renderer.getDrawingBufferSize(resV)
   rt.setSize(resV.x, resV.y)
   uRes.value.copy(resV)
+  vortex.setSize(resV.x, resV.y, p && !low ? 0.6 : 0.45)
 }
 addEventListener('message', (e) => {
   if (e.source !== parent) return
@@ -1103,10 +1196,14 @@ if (DEMO) {
     if (a === 'abort') finish(live[0], 'aborted')
     if (a === 'wait' && live[0]) Object.assign(live[0], { status: 'waiting', progress: D.wait2 })
     if (a === 'all') live.forEach((s) => finish(s, 'done'))
+    if (a.startsWith('style:')) startStyle(a.slice(6))
+    if (a === 'burn' && styleNow === 'splat') splats.ignite(tunTravel)
   })
   addEventListener('keydown', (e) => { if (e.key === 'd' || e.key === 'D') dev.classList.toggle('hide') })
   window.__subspace = {
-    get state() { return state }, demo, add, finish, walk, fireBolt,
+    get state() { return state }, get style() { return styleNow }, demo, add, finish, walk, fireBolt, startStyle, setStyleInstant,
+    ignite: () => splats.ignite(tunTravel),
+    parts: { vortex, splats, endGlow, bloom, wall, wisps, sky, streaks, styleU },
     pause() { timeScale = 0 }, play() { timeScale = 1 },
     /** 不靠 requestAnimationFrame 往前推 sec 秒（页面在后台时用来截图检查） */
     step(sec, fps = 30) { for (let i = 0; i < sec * fps; i++) { demoTick(1 / fps); update(1 / fps) } render() },
@@ -1126,6 +1223,9 @@ function frame(t) {
   render()
 }
 function render() {
+  // 龙卷画风要先用将要画隧道的那台相机把它步进进低分辨率的图
+  if (needRT === 'tunnel') vortex.prepare(renderer, auxCam)
+  else if (renderPass.scene === tunScene) vortex.prepare(renderer, camera)
   if (needRT) {
     renderer.setRenderTarget(rt)
     renderer.render(needRT === 'tunnel' ? tunScene : spaceScene, auxCam)
