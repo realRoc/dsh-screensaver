@@ -3,8 +3,11 @@
 //   npx github:realRoc/dsh-screensaver            常驻，按 ⌃⌥⌘L 开屏保（Ctrl+C 退出）
 //   npx github:realRoc/dsh-screensaver --now      马上开屏保，解开后退出（适合让 AI agent 在你走开前跑一下）
 //   npx github:realRoc/dsh-screensaver --now subspace
-// 配置用环境变量 DSH_SCREENSAVER_CONFIG（JSON，字段同 dsh 插件配置）。
+//   npx dsh-screensaver setup                       改配置（合盖不睡、主题、空闲自动开），别的子命令见 lib/cli.js
+// 配置存在数据目录的 config.json（lib/settings.js）；环境变量 DSH_SCREENSAVER_CONFIG（JSON）临时盖过它。
+import { CLI_USAGE, runCli } from '../lib/cli.js'
 import { launch } from '../lib/launcher.js'
+import { standaloneConfig } from '../lib/settings.js'
 
 const args = process.argv.slice(2)
 if (args.includes('--help') || args.includes('-h')) {
@@ -15,14 +18,18 @@ Usage:
   dsh-screensaver --now [theme]   start right away and exit after you unlock
 
 Unlock with Touch ID (just touch the sensor) or any key / click for the password dialog.
-Config: DSH_SCREENSAVER_CONFIG='{"theme":"subspace","idleMinutes":10,"lidAwake":true}'`)
+Lid-closed awake is on by default once you allow it: dsh-screensaver lid authorize
+
+${CLI_USAGE}
+
+One-off overrides: DSH_SCREENSAVER_CONFIG='{"theme":"subspace","idleMinutes":10,"lidAwake":false}'`)
   process.exit(0)
 }
 
-let config = {}
-try {
-  config = JSON.parse(process.env.DSH_SCREENSAVER_CONFIG || '{}')
-} catch {}
+const code = await runCli(args)
+if (code !== null) process.exit(code)
+
+const config = standaloneConfig()
 
 try {
   const child = await launch({ args, config })

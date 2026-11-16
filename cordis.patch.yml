@@ -9,14 +9,14 @@
 #     config:
 #       theme: subspace
 #       idleMinutes: 10
-#       lidAwake: true
+#       lidAwake: false   # 合盖不睡默认开（授权过才生效），不要就写 false
 - insert:
     - id: dsh-screensaver
       name: dsh-screensaver
       config:
         theme: basic
         idleMinutes: 0
-        lidAwake: false
+        lidAwake: true
     - id: dsh-screensaver-command
       name: dsh-screensaver/command
     - id: dsh-screensaver-tool

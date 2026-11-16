@@ -4,7 +4,7 @@
 //   先进 simpleFullScreen（老式全屏，不新开桌面空间）再开 kiosk，不然 kiosk 会走原生全屏，把屏保放进单独的空间。
 // - 窗口不是完全不透明（网页背景留一点点透明）：完全挡住的话 Chrome 会把被挡的窗口当成隐藏，定时器和动画降频，
 //   被挡住的浏览器里的 agent（靠扩展驱动的那种）也跟着降频。
-// - 屏保开着时不让系统睡、也不关屏；配置了 lidAwake 再把合盖睡眠关掉（lidawake.js）。
+// - 屏保开着时不让系统睡、也不关屏；合盖睡眠也关掉（lidawake.js，lidAwake 默认开，写 false 才不管；没授权只提示一句）。
 // - 解锁两条路（都是 native/unlock/ 的 desk-unlock，LocalAuthentication）：
 //   1. 直接摸 Touch ID：屏保一开就起 `desk-unlock --listen`。它在主屏上盖一层看不见的窗口（屏保上一层），
 //      底部放系统的指纹小图标，并且自己当前台程序（Touch ID 只认前台程序，所以这期间屏保不抢焦点，
@@ -47,6 +47,10 @@ const SAY = {
     en: "This Mac can't verify your identity, so the screen saver only covers the screen: a click opens it",
   },
   lidRecovered: { zh: '上次合盖不睡没关掉，已经恢复睡眠了', en: 'Lid-closed sleep was left disabled last time; restored it' },
+  lidUnauthorized: {
+    zh: '合盖不睡还没授权，合上盖子电脑照样睡：dsh 里输 /screensaver lid authorize，或终端跑 dsh-screensaver lid authorize（输一次管理员密码）',
+    en: 'Lid-closed awake is not authorized, so closing the lid still sleeps the Mac: run /screensaver lid authorize in dsh, or dsh-screensaver lid authorize in a terminal (admin password once)',
+  },
 }
 
 export class Screensaver {
@@ -161,18 +165,24 @@ export class Screensaver {
     for (const w of win ? [win] : this.wins.values()) if (!w.isDestroyed()) w.webContents.send('saver:sessions', payload)
   }
 
-  async start(themeId) {
+  /**
+   * 开屏保。opts.lidAwake：这一次要不要合盖不睡（`--now` 交给已经在跑的这个时带过来的），不给就看配置，配置没写算开
+   */
+  async start(themeId, opts = {}) {
     if (this.active) return
     const theme = this.theme(themeId)
     if (!theme) return this.say('[dsh-screensaver] no theme found')
     mountTheme(theme.id, theme.dir)
     this.current = theme
     if (!this.canAuthenticate()) this.say(SAY.noAuth[saverLang()])
-    if (this.config.lidAwake && !this.lid.active) {
+    if ((opts.lidAwake ?? this.config.lidAwake) !== false && !this.lid.active && this.lid.supported) {
       try {
         if (await this.lid.authorized()) {
           await this.lid.on()
           this.lidBySaver = this.lid.active
+        } else if (!this.lidHinted) {
+          this.lidHinted = true
+          this.say(SAY.lidUnauthorized[saverLang()])
         }
       } catch (e) {
         this.say(`[dsh-screensaver] lid-awake failed: ${e?.message ?? e}`)
