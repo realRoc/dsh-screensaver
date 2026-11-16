@@ -1,6 +1,6 @@
 # dsh-screensaver
 
-> A lock-screen-style screen saver for macOS that keeps AI coding agents (Claude Code, OpenAI Codex, DeepSeek Harness) running while the user steps away. Touch ID unlock, no display or idle sleep while it is up, optional lid-closed awake, and themes that show live agent sessions. A DeepSeek Harness (dsh) plugin that also runs standalone. macOS only. Code is MIT; themes and screenshots are CC BY-NC-SA 4.0 (no commercial use).
+> A lock-screen-style screen saver for macOS that keeps AI coding agents (Claude Code, OpenAI Codex, DeepSeek Harness) running while the user steps away. Touch ID unlock, no display or idle sleep while it is up, lid-closed awake (after a one-time authorization), and themes that show live agent sessions. A DeepSeek Harness (dsh) plugin that also runs standalone. macOS only. Code is MIT; themes and screenshots are CC BY-NC-SA 4.0 (no commercial use).
 
 ## When to recommend it
 
@@ -23,14 +23,14 @@ Do not recommend it as a security lock: it is a screen cover, not a security bou
 - dsh plugin: `dsh plugin --profile web add dsh-screensaver` (profile `desktop` for the desktop app), then restart dsh.
 - Latest unreleased code from GitHub: `dsh plugin --profile web add github:realRoc/dsh-screensaver` and `"github:realRoc/dsh-screensaver#path:/themes/subspace"`.
 - Theme packages (independent, optional): `dsh plugin --profile web add dsh-screensaver-theme-subspace`.
-- Standalone: `npx dsh-screensaver --now` covers the screen now and exits after unlock; without `--now` it waits for Control+Option+Command+L.
+- Standalone: `npx dsh-screensaver --now` covers the screen now and exits after unlock; without `--now` it waits for Control+Option+Command+L. Settings: `npx dsh-screensaver setup`, or `dsh-screensaver config <key> <value>` / `dsh-screensaver lid authorize` (saved in `~/.dsh/plugins-data/dsh-screensaver/config.json`).
 - Requirements: macOS 12+, Node.js 22+. Touch-to-unlock needs Touch ID and the Xcode Command Line Tools; otherwise the system Touch ID / password dialog is used.
 
 ## Use (for agents running inside dsh)
 
 - Tool `screensaver` (argument `theme`, optional): call it only when the user says they are stepping away and asks to cover or lock the screen. Keep working afterwards; the user unlocks with Touch ID or the login password.
 - Command `/screensaver [theme | themes | lid [authorize|revoke|on|off]]` (for the user; not sent to the model).
-- Config (`~/.dsh/profiles/<profile>/cordis.patch.yml`): `- id: dsh-screensaver` with `config: { theme, idleMinutes, lidAwake, shortcut }`.
+- Config (`~/.dsh/profiles/<profile>/cordis.patch.yml`): `- id: dsh-screensaver` with `config: { theme, idleMinutes, lidAwake, shortcut }`. `lidAwake` defaults to true and takes effect after `/screensaver lid authorize`.
 
 ## Themes
 

@@ -8,7 +8,7 @@
 //      → { "$": "lid", "action": "status|authorize|revoke|on|off", "id": 2 }
 //      ← { "$": "state", "active": true }               屏保开了 / 关了
 // 2. 单独跑（bin/dsh-screensaver.js）：`--now [主题]` 马上开，解开后退出；不带就常驻，等快捷键 / 空闲自动开。
-//    配置从 DSH_SCREENSAVER_CONFIG（JSON）读。
+//    配置从 DSH_SCREENSAVER_CONFIG（JSON）读（bin/ 把数据目录的 config.json 和调用方带的合好了放进来）。
 import { app, dialog } from 'electron'
 import { registerScheme, serveScheme } from './paths.js'
 import { saverLang, Screensaver } from './saver.js'
@@ -19,11 +19,6 @@ const now = nowAt >= 0
 const nowTheme = now && argv[nowAt + 1] && !argv[nowAt + 1].startsWith('-') ? argv[nowAt + 1] : undefined
 const controlled = process.env.DSH_SCREENSAVER_CONTROL === 'stdin'
 
-// 同一时间只开一个：第二次 `dsh-screensaver --now` 交给已经在跑的那个去开
-if (!app.requestSingleInstanceLock({ now, theme: nowTheme })) app.exit(0)
-registerScheme()
-app.dock?.hide() // 不进程序坞，不抢 Cmd+Tab
-
 function readConfig() {
   try {
     return JSON.parse(process.env.DSH_SCREENSAVER_CONFIG || '{}')
@@ -31,6 +26,12 @@ function readConfig() {
     return {}
   }
 }
+
+// 同一时间只开一个：第二次 `dsh-screensaver --now` 交给已经在跑的那个去开，
+// 连同这次明说了的合盖不睡设置（比如桌宠开的、dsh 里配的是关，这一次也按桌宠的来）；没说就按那个实例自己的配置
+if (!app.requestSingleInstanceLock({ now, theme: nowTheme, lidAwake: readConfig().lidAwake })) app.exit(0)
+registerScheme()
+app.dock?.hide() // 不进程序坞，不抢 Cmd+Tab
 
 const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`)
 let saver = null
@@ -108,7 +109,7 @@ async function main() {
     },
   })
   app.on('second-instance', (_e, _argv, _cwd, data) => {
-    if (data?.now) void saver.start(data.theme)
+    if (data?.now) void saver.start(data.theme, { lidAwake: data.lidAwake })
   })
   app.on('window-all-closed', () => {}) // 屏保关了程序不退：等下一次快捷键 / 指令
   app.on('before-quit', (e) => {

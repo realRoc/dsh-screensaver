@@ -29,7 +29,7 @@ keep working and you only want the screen covered.
 | Computer-use agents and extension-driven browsers keep running | No, they stop ([openai/codex#58545](https://github.com/openai/codex/issues/58545), [openai/codex#43869](https://github.com/openai/codex/issues/43869)) | Not tested | Yes | Yes | **Browser-extension agents keep running**; anything that must click the screen is covered |
 | Covered browser windows keep full speed | No, the system treats them as hidden | Not tested | n/a | n/a | **Yes**: the cover is a tiny bit translucent, so the system still treats windows as visible |
 | Prevents display sleep and system idle sleep | No: the display soon goes dark, and whether the Mac then sleeps depends on other apps ([anthropics/claude-code#81832](https://github.com/anthropics/claude-code/issues/81832)) | No | No | Yes | **Yes, while it is up** |
-| Stays awake with the **lid closed** | No | No | No | No (sleep assertions cannot stop lid sleep) | **Optional** (`pmset disablesleep` with a one-time admin authorization, auto-restored) |
+| Stays awake with the **lid closed** | No | No | No | No (sleep assertions cannot stop lid sleep) | **Yes, on by default** once you allow it (`pmset disablesleep` with a one-time admin authorization, auto-restored) |
 | Unlock | Touch ID or password | Key press (+ password) | n/a | n/a | **Just touch Touch ID**, or press any key / click for Touch ID or the login password |
 | Shows what your agents are doing | No | No | No | No | **Yes** (themes that opt in: names, current step, running / waiting / done / stopped) |
 
@@ -70,6 +70,7 @@ dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspa
 npx dsh-screensaver --now               # cover the screen now, exit after you unlock
 npx dsh-screensaver                     # stay in the background, press ⌃⌥⌘L to start
 npx dsh-screensaver --now subspace      # with a theme (when it is installed or in DSH_SCREENSAVER_THEMES)
+npx dsh-screensaver setup               # settings: lid-closed awake (and its one-time authorization), theme, idle start
 ```
 
 Requirements: macOS 12 or later, Node.js 22 or later. Touch-to-unlock needs a Mac with Touch ID (or a Magic Keyboard with
@@ -103,11 +104,24 @@ Add an entry to your profile's `~/.dsh/profiles/<profile>/cordis.patch.yml` (it 
   config:
     theme: subspace      # default theme id
     idleMinutes: 10      # start after 10 idle minutes; 0 = never (default)
-    lidAwake: true       # also keep the Mac awake with the lid closed while the screen saver is up
+    lidAwake: true       # keep the Mac awake with the lid closed while the screen saver is up (default; false turns it off)
     shortcut: Control+Alt+Command+L   # Electron accelerator; '' disables the shortcut
 ```
 
-Standalone, pass the same fields as JSON: `DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}' npx dsh-screensaver`.
+Standalone, the same fields live in `~/.dsh/plugins-data/dsh-screensaver/config.json`:
+
+| Command | What it does |
+| --- | --- |
+| `dsh-screensaver setup` | Walk through lid-closed awake (authorizes it on the spot), the theme and idle start |
+| `dsh-screensaver config` | Show the settings and the file they are saved in |
+| `dsh-screensaver config <key> <value>` | Change one, e.g. `config lidAwake off`, `config idleMinutes 10` |
+| `dsh-screensaver config unset <key>` | Back to the default |
+| `dsh-screensaver lid [status\|authorize\|revoke]` | Lid-closed awake authorization, same as `/screensaver lid` |
+| `dsh-screensaver themes` | List installed themes |
+
+`DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}'` overrides the file for one run. A `--now` handed to a screen saver that is
+already running (for example the one inside dsh) brings its `lidAwake` along for that start when it sets one (in the file or the variable); otherwise the running one
+uses its own config.
 
 ## Themes
 
@@ -141,7 +155,7 @@ sessions. They are trademarks of their owners and are used only to identify thos
 - `desk-unlock`, a Swift helper (`native/unlock/main.swift`), embeds the system Touch ID view (`LAAuthenticationView`) in
   an invisible window above the screen saver, so touching the sensor unlocks with no dialog. It also reads battery and
   Wi-Fi for the status bar (IOKit, CoreWLAN; no location permission, the network name is not read).
-- While up: `powerSaveBlocker('prevent-display-sleep')`. With `lidAwake`: `pmset -a disablesleep 1`, restored when the
+- While up: `powerSaveBlocker('prevent-display-sleep')`. With `lidAwake` (default) and the authorization: `pmset -a disablesleep 1`, restored when the
   screen saver closes, when the process dies (a detached watchdog), at the next start if it was left on, and when the
   battery drops to 20%.
 
@@ -151,7 +165,9 @@ sessions. They are trademarks of their owners and are used only to identify thos
 Yes. Terminal agents are not affected at all, the Mac does not idle-sleep, and the display does not turn off.
 
 **Does it work when I close the MacBook lid?**
-Only with lid-closed awake: run `/screensaver lid authorize` once, then set `lidAwake: true` or use `/screensaver lid on`.
+Yes, after you allow it once: `/screensaver lid authorize` in dsh, or `dsh-screensaver lid authorize` (or `setup`)
+standalone. `lidAwake` is on by default, so from then on every screen saver keeps the Mac awake with the lid closed;
+set `lidAwake: false` to stop that.
 Keep the Mac plugged in; it turns itself off at 20% battery.
 
 **Is it a replacement for the macOS lock screen?**

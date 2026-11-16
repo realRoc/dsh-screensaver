@@ -25,7 +25,7 @@ dsh-screensaver 就是为这种时候做的：样子跟 Mac 锁屏一样，回�
 | computer use 类 agent、靠浏览器扩展驱动的 agent | 会停（[openai/codex#58545](https://github.com/openai/codex/issues/58545)、[openai/codex#43869](https://github.com/openai/codex/issues/43869)） | 未测试 | 照常 | 照常 | **浏览器扩展类照常运行**；需要点击屏幕的操作会被挡住 |
 | 被盖住的浏览器窗口不降频 | 会降频，系统认为窗口不可见 | 未测试 | — | — | **不降频**：屏保保留了一点点透明度，系统仍认为窗口可见 |
 | 不熄屏、不进入空闲睡眠 | 不管：锁屏后很快熄屏，之后睡不睡取决于其他程序（[anthropics/claude-code#81832](https://github.com/anthropics/claude-code/issues/81832)） | 不管 | 不管 | 管 | **屏保期间一直管** |
-| 合盖不睡 | 不行 | 不行 | 不行 | 不行（防睡眠断言管不了合盖） | **可选**（`pmset disablesleep`，授权一次，退出后自动恢复） |
+| 合盖不睡 | 不行 | 不行 | 不行 | 不行（防睡眠断言管不了合盖） | **默认开**，授权一次就生效（`pmset disablesleep`，退出后自动恢复） |
 | 解锁 | Touch ID 或密码 | 按任意键（可能要输密码） | — | — | **直接摸 Touch ID**，或按键、点击后用 Touch ID / 登录密码 |
 | 能看到 agent 在做什么 | 不能 | 不能 | 不能 | 不能 | **能**（支持会话的主题会显示名称、当前步骤和状态） |
 
@@ -63,6 +63,7 @@ dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspa
 ```bash
 npx dsh-screensaver --now               # 立即开启，解锁后退出
 npx dsh-screensaver                     # 在后台待命，按 ⌃⌥⌘L 开启
+npx dsh-screensaver setup               # 改配置：合盖不睡（顺手授权）、主题、空闲自动开启
 ```
 
 系统要求：macOS 12 及以上，Node.js 22 及以上。想「摸一下就解锁」，需要带 Touch ID 的 Mac（或带 Touch ID 的妙控键盘），
@@ -93,11 +94,23 @@ npx dsh-screensaver                     # 在后台待命，按 ⌃⌥⌘L 开�
   config:
     theme: subspace      # 默认主题
     idleMinutes: 10      # 空闲 10 分钟自动开启；0 表示不自动开启（默认）
-    lidAwake: true       # 开启屏保时顺便打开合盖不睡
+    lidAwake: true       # 开启屏保时顺便打开合盖不睡（默认开，写 false 关掉）
     shortcut: Control+Alt+Command+L   # Electron 快捷键写法；填 '' 不注册快捷键
 ```
 
-单独运行时，用环境变量传同样的 JSON：`DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}' npx dsh-screensaver`。
+单独运行时，同样几项存在 `~/.dsh/plugins-data/dsh-screensaver/config.json`：
+
+| 命令 | 作用 |
+| --- | --- |
+| `dsh-screensaver setup` | 一问一答：合盖不睡（当场授权）、主题、空闲自动开启 |
+| `dsh-screensaver config` | 查看配置和配置文件位置 |
+| `dsh-screensaver config <项> <值>` | 改一项，例如 `config lidAwake off`、`config idleMinutes 10` |
+| `dsh-screensaver config unset <项>` | 改回默认 |
+| `dsh-screensaver lid [status\|authorize\|revoke]` | 合盖不睡授权，同 `/screensaver lid` |
+| `dsh-screensaver themes` | 查看已安装的主题 |
+
+`DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}'` 只对这一次生效，盖过配置文件。`--now` 交给已经在跑的屏保（比如 dsh 里那个）时，
+如果这次写了 `lidAwake`（配置文件或环境变量里），会一起带过去；没写就按那个屏保自己的配置。
 
 ## 主题
 
@@ -128,7 +141,8 @@ npx dsh-screensaver                     # 在后台待命，按 ⌃⌥⌘L 开�
 不会。终端里的 agent 完全不受影响，电脑不会空闲睡眠，屏幕也不会熄灭。
 
 **合上 MacBook 盖子还能继续跑吗？**
-可以，但要先开启合盖不睡：执行一次 `/screensaver lid authorize`，再设置 `lidAwake: true` 或执行 `/screensaver lid on`。
+可以，授权一次就行：dsh 里执行 `/screensaver lid authorize`，单独运行时执行 `dsh-screensaver lid authorize`（或 `setup`）。
+`lidAwake` 默认开，之后每次开屏保都会合盖不睡；不想要就设 `lidAwake: false`。
 建议插着电源；用电池且电量降到 20% 时会自动恢复睡眠。
 
 **能代替 macOS 锁屏吗？**
