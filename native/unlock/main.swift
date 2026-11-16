@@ -120,8 +120,8 @@ while !ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e
   if lidClosed() {
     graceUntil = nil
   } else {
-    // 盖子开着：本来就没有 Touch ID 的机器（biometryType 是 none）不用等
-    if ctx.biometryType == .none { finish(false, err?.localizedDescription ?? "", unavailable: true) }
+    // 盖子开着也先等几秒：刚开盖时传感器还没回来，canEvaluatePolicy 失败时 biometryType 也读不准（可能是 none），
+    // 分不清「没有 Touch ID」还是「还没回来」。没有 Touch ID 的机器只是多等 5 秒才退回按键 + 密码
     if graceUntil == nil { graceUntil = Date().addingTimeInterval(REOPEN_GRACE) }
     if Date() > graceUntil! { finish(false, err?.localizedDescription ?? "", unavailable: true) }
   }
