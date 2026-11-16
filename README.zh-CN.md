@@ -154,6 +154,15 @@ npm run build:themes           # 修改 themes/subspace/src 后重新打包 inde
 DSH_SCREENSAVER_DEBUG=1 npm run now   # 打印页面里的 console 输出
 ```
 
+### 发版
+
+推送 `v*` 标签会触发 [`.github/workflows/publish.yml`](.github/workflows/publish.yml)：跑测试，再通过 Trusted Publishing（不用令牌）
+把两个包发到 npm。某个包的版本 npm 上已有就跳过。
+
+1. 改 `package.json` 的 `version`（主题有改动才改 `themes/subspace/package.json` 的版本）。
+2. 提交并推送到 `main`。
+3. 打标签并推送：`git tag vX.Y.Z && git push origin vX.Y.Z`。标签必须和根目录 `package.json` 的版本一致。
+
 ## 授权
 
 代码采用 MIT；所有主题（`themes/`）和截图（`docs/images/`）等视觉素材采用 **CC BY-NC-SA 4.0，禁止商用**。

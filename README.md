@@ -180,6 +180,15 @@ npm run build:themes           # rebuild themes/subspace/index.html after editin
 DSH_SCREENSAVER_DEBUG=1 npm run now   # log page console messages
 ```
 
+### Release
+
+Pushing a `v*` tag runs [`.github/workflows/publish.yml`](.github/workflows/publish.yml), which tests and publishes both
+packages to npm through Trusted Publishing (no token). A package whose version is already on npm is skipped.
+
+1. Bump `version` in `package.json` (and in `themes/subspace/package.json` only if the theme changed).
+2. Commit and push to `main`.
+3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The tag must match the root `package.json` version.
+
 ## License
 
 Code is MIT ([LICENSE](LICENSE)). All visual assets, meaning every theme under `themes/` and the screenshots under

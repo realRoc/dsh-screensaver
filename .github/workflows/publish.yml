@@ -1,0 +1,93 @@
+# Publish dsh-screensaver and dsh-screensaver-theme-subspace to npm when a v* tag is pushed.
+#
+# Uses npm Trusted Publishing (OIDC): no NPM_TOKEN secret. Each package must list this workflow
+# (owner realRoc, repository dsh-screensaver, workflow publish.yml) under
+# Settings -> Trusted Publisher on npmjs.com. Provenance is attached automatically.
+#
+# A package whose current version is already on npm is skipped, so the theme only gets
+# published when its version was bumped.
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  id-token: write # OIDC token for npm Trusted Publishing
+  contents: read
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # The root package is "os": ["darwin"], and the tests cover macOS behaviour.
+    runs-on: macos-latest
+    env:
+      NPM_REGISTRY: https://registry.npmjs.org/
+      # Tests don't launch Electron; skip its ~100 MB binary download.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install npm with Trusted Publishing support (>= 11.5.1)
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
+
+      - name: Check tag matches package.json version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(node -p "require('./package.json').version")"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $pkg_version"
+            exit 1
+          fi
+          echo "Releasing $pkg_version"
+
+      # package-lock.json points at the npmmirror registry; fetch the same tarballs
+      # (same integrity hashes) from registry.npmjs.org instead.
+      - name: Install dependencies
+        run: npm ci --registry="$NPM_REGISTRY" --replace-registry-host=always
+
+      - name: Test
+        run: npm test
+
+      - name: Publish packages
+        run: |
+          set -euo pipefail
+
+          publish() {
+            local dir="$1" name version out dist_tag=latest
+            name="$(node -p "require('./$dir/package.json').name")"
+            version="$(node -p "require('./$dir/package.json').version")"
+
+            # Exits 0 and prints the version if it exists; fails with E404 if it doesn't.
+            if out="$(npm view "$name@$version" version --registry="$NPM_REGISTRY" 2>"$RUNNER_TEMP/npm-view.err")"; then
+              if [ "$out" = "$version" ]; then
+                echo "::notice::$name@$version is already on npm, skipping"
+                return 0
+              fi
+            elif ! grep -q E404 "$RUNNER_TEMP/npm-view.err"; then
+              cat "$RUNNER_TEMP/npm-view.err"
+              echo "::error::Could not check whether $name@$version is on npm"
+              return 1
+            fi
+
+            # npm requires an explicit dist-tag for prerelease versions.
+            if [[ "$version" == *-* ]]; then
+              dist_tag=next
+            fi
+
+            echo "Publishing $name@$version (dist-tag $dist_tag)"
+            (cd "$dir" && npm publish --tag "$dist_tag")
+          }
+
+          publish .
+          publish themes/subspace
