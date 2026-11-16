@@ -28,7 +28,7 @@ function readConfig() {
 }
 
 // 同一时间只开一个：第二次 `dsh-screensaver --now` 交给已经在跑的那个去开，
-// 连同这次的合盖不睡设置（比如桌宠开的、dsh 里配的是关，这一次也按桌宠的来）
+// 连同这次明说了的合盖不睡设置（比如桌宠开的、dsh 里配的是关，这一次也按桌宠的来）；没说就按那个实例自己的配置
 if (!app.requestSingleInstanceLock({ now, theme: nowTheme, lidAwake: readConfig().lidAwake })) app.exit(0)
 registerScheme()
 app.dock?.hide() // 不进程序坞，不抢 Cmd+Tab

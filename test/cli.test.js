@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runCli } from '../lib/cli.js'
-import { DEFAULTS, configPath, parseValue, readSettings, standaloneConfig } from '../lib/settings.js'
+import { DEFAULTS, configPath, explicitConfig, parseValue, readSettings, standaloneConfig } from '../lib/settings.js'
 
 const DIR = fileURLToPath(new URL('../node_modules/.cache/cli-test', import.meta.url))
 const PATH = join(DIR, 'config.json')
@@ -48,6 +48,15 @@ describe('配置文件', () => {
     writeFileSync(PATH, JSON.stringify({ lidAwake: false, theme: 'subspace', junk: 1 }))
     expect(standaloneConfig(env)).toEqual({ ...DEFAULTS, lidAwake: false, theme: 'subspace' })
     expect(standaloneConfig({ ...env, DSH_SCREENSAVER_CONFIG: '{"lidAwake":true}' }).lidAwake).toBe(true)
+  })
+
+  it('起屏保进程只传写了的项：没写 lidAwake 就不带，交给常驻实例时不会盖过它的配置', () => {
+    const env = { DSH_SCREENSAVER_HOME: DIR }
+    expect(explicitConfig(env)).toEqual({})
+    expect(explicitConfig({ ...env, DSH_SCREENSAVER_CONFIG: '{"lidAwake":false}' })).toEqual({ lidAwake: false })
+    mkdirSync(DIR, { recursive: true })
+    writeFileSync(PATH, JSON.stringify({ theme: 'subspace' }))
+    expect(explicitConfig(env)).toEqual({ theme: 'subspace' })
   })
 
   it('值的写法：on/off、整数分钟，认不出来的报错', () => {

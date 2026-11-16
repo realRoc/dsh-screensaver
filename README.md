@@ -120,7 +120,8 @@ Standalone, the same fields live in `~/.dsh/plugins-data/dsh-screensaver/config.
 | `dsh-screensaver themes` | List installed themes |
 
 `DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}'` overrides the file for one run. A `--now` handed to a screen saver that is
-already running (for example the one inside dsh) brings its `lidAwake` along for that start.
+already running (for example the one inside dsh) brings its `lidAwake` along for that start when it sets one (in the file or the variable); otherwise the running one
+uses its own config.
 
 ## Themes
 

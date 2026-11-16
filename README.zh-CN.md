@@ -110,7 +110,7 @@ npx dsh-screensaver setup               # 改配置：合盖不睡（顺手授�
 | `dsh-screensaver themes` | 查看已安装的主题 |
 
 `DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}'` 只对这一次生效，盖过配置文件。`--now` 交给已经在跑的屏保（比如 dsh 里那个）时，
-会把这次的 `lidAwake` 一起带过去。
+如果这次写了 `lidAwake`（配置文件或环境变量里），会一起带过去；没写就按那个屏保自己的配置。
 
 ## 主题
 

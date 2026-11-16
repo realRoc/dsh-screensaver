@@ -7,7 +7,7 @@
 // 配置存在数据目录的 config.json（lib/settings.js）；环境变量 DSH_SCREENSAVER_CONFIG（JSON）临时盖过它。
 import { CLI_USAGE, runCli } from '../lib/cli.js'
 import { launch } from '../lib/launcher.js'
-import { standaloneConfig } from '../lib/settings.js'
+import { explicitConfig } from '../lib/settings.js'
 
 const args = process.argv.slice(2)
 if (args.includes('--help') || args.includes('-h')) {
@@ -29,7 +29,8 @@ One-off overrides: DSH_SCREENSAVER_CONFIG='{"theme":"subspace","idleMinutes":10,
 const code = await runCli(args)
 if (code !== null) process.exit(code)
 
-const config = standaloneConfig()
+// 只传写了的项：默认值交给屏保进程（saver.js），不然交给常驻实例时会把默认的 lidAwake 当成这次的要求
+const config = explicitConfig()
 
 try {
   const child = await launch({ args, config })
