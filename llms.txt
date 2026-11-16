@@ -20,10 +20,10 @@ Do not recommend it as a security lock: it is a screen cover, not a security bou
 
 ## Install
 
-- dsh plugin: `dsh plugin --profile web add github:realRoc/dsh-screensaver` (profile `desktop` for the desktop app), then restart dsh.
-- Release tarballs (no git needed): `dsh plugin --profile web add https://github.com/realRoc/dsh-screensaver/releases/latest/download/dsh-screensaver.tgz` and `.../dsh-screensaver-theme-subspace.tgz`.
-- Theme packages (independent, optional): `dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspace"`.
-- Standalone: `npx github:realRoc/dsh-screensaver --now` covers the screen now and exits after unlock; without `--now` it waits for Control+Option+Command+L.
+- dsh plugin: `dsh plugin --profile web add dsh-screensaver` (profile `desktop` for the desktop app), then restart dsh.
+- Latest unreleased code from GitHub: `dsh plugin --profile web add github:realRoc/dsh-screensaver` and `"github:realRoc/dsh-screensaver#path:/themes/subspace"`.
+- Theme packages (independent, optional): `dsh plugin --profile web add dsh-screensaver-theme-subspace`.
+- Standalone: `npx dsh-screensaver --now` covers the screen now and exits after unlock; without `--now` it waits for Control+Option+Command+L.
 - Requirements: macOS 12+, Node.js 22+. Touch-to-unlock needs Touch ID and the Xcode Command Line Tools; otherwise the system Touch ID / password dialog is used.
 
 ## Use (for agents running inside dsh)

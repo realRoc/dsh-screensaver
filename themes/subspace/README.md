@@ -28,7 +28,7 @@ through it into the new style while the palette shifts.
 本主题是视觉作品，采用 CC BY-NC-SA 4.0，禁止商用。
 
 ```bash
-dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspace"
+dsh plugin --profile web add dsh-screensaver-theme-subspace
 ```
 
 Then `/screensaver subspace`, or set `theme: subspace` in the dsh-screensaver config.

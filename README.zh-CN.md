@@ -39,7 +39,7 @@ dsh-screensaver 就是为这种时候做的：样子跟 Mac 锁屏一样，回�
 在 dsh 里使用：
 
 ```bash
-dsh plugin --profile web add github:realRoc/dsh-screensaver
+dsh plugin --profile web add dsh-screensaver
 ```
 
 DeepSeek Harness 桌面版把 `web` 换成 `desktop`。装好后重启 dsh。第一次启动会下载 Electron 运行时（约 100 MB，只下载一次）；
@@ -48,21 +48,21 @@ DeepSeek Harness 桌面版把 `web` 换成 `desktop`。装好后重启 dsh。第
 主题单独安装，需要哪个装哪个。只用内置的「时钟」就不用装下面这个：
 
 ```bash
-dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspace"
+dsh plugin --profile web add dsh-screensaver-theme-subspace
 ```
 
-电脑上没装 git，或者想装固定的发布版本，可以直接装 GitHub Release 里打好的包：
+想用 GitHub 上还没发布的最新代码，而不是 npm 上的发布版：
 
 ```bash
-dsh plugin --profile web add https://github.com/realRoc/dsh-screensaver/releases/latest/download/dsh-screensaver.tgz
-dsh plugin --profile web add https://github.com/realRoc/dsh-screensaver/releases/latest/download/dsh-screensaver-theme-subspace.tgz
+dsh plugin --profile web add github:realRoc/dsh-screensaver
+dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspace"
 ```
 
 不装 dsh 也能用：
 
 ```bash
-npx github:realRoc/dsh-screensaver --now            # 立即开启，解锁后退出
-npx github:realRoc/dsh-screensaver                  # 在后台待命，按 ⌃⌥⌘L 开启
+npx dsh-screensaver --now               # 立即开启，解锁后退出
+npx dsh-screensaver                     # 在后台待命，按 ⌃⌥⌘L 开启
 ```
 
 系统要求：macOS 12 及以上，Node.js 22 及以上。想「摸一下就解锁」，需要带 Touch ID 的 Mac（或带 Touch ID 的妙控键盘），
@@ -97,14 +97,14 @@ npx github:realRoc/dsh-screensaver                  # 在后台待命，按 ⌃�
     shortcut: Control+Alt+Command+L   # Electron 快捷键写法；填 '' 不注册快捷键
 ```
 
-单独运行时，用环境变量传同样的 JSON：`DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}' npx github:realRoc/dsh-screensaver`。
+单独运行时，用环境变量传同样的 JSON：`DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}' npx dsh-screensaver`。
 
 ## 主题
 
 | 主题 | id | 安装方式 | 显示 agent 会话 |
 | --- | --- | --- | --- |
 | 时钟 | `basic` | 内置 | 否 |
-| 亚空间跃迁 | `subspace` | `github:realRoc/dsh-screensaver#path:/themes/subspace` | 是 |
+| 亚空间跃迁 | `subspace` | `dsh-screensaver-theme-subspace` | 是 |
 
 更多主题陆续推出。每个主题就是一个文件夹：`index.html` 负责绘制（运行在沙盒 iframe 里），`saver.json` 写名称等信息。
 自己做的主题放进 `~/.dsh/plugins-data/dsh-screensaver/themes/<id>/` 就能用，也可以发布成 npm 包，在 `package.json` 里写上
@@ -135,7 +135,7 @@ npx github:realRoc/dsh-screensaver                  # 在后台待命，按 ⌃�
 不能。它适合在家或办公室临时走开、又想让 agent 继续工作的场景。需要真正的安全保护时，请用 ⌃⌘Q。
 
 **一定要装 DeepSeek Harness 吗？**
-不用。`npx github:realRoc/dsh-screensaver` 可以单独运行。装在 dsh 里会多出 `/screensaver` 命令、agent 可调用的工具和配置项。
+不用。`npx dsh-screensaver` 可以单独运行。装在 dsh 里会多出 `/screensaver` 命令、agent 可调用的工具和配置项。
 
 **支持 Windows 或 Linux 吗？**
 暂时只支持 macOS。

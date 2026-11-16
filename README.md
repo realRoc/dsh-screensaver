@@ -45,7 +45,7 @@ use dsh-screensaver.
 ### As a DeepSeek Harness plugin
 
 ```bash
-dsh plugin --profile web add github:realRoc/dsh-screensaver
+dsh plugin --profile web add dsh-screensaver
 ```
 
 Use `desktop` instead of `web` for the desktop app profile, then restart dsh. The first start downloads the Electron
@@ -54,22 +54,22 @@ runtime (about 100 MB, once) and compiles the Touch ID helper if the Xcode Comma
 Themes are separate packages. Install only the ones you want:
 
 ```bash
-dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspace"
+dsh plugin --profile web add dsh-screensaver-theme-subspace
 ```
 
-No git on the machine, or you prefer a fixed release? Install the packaged release instead:
+Want the latest unreleased code from GitHub instead of the npm release:
 
 ```bash
-dsh plugin --profile web add https://github.com/realRoc/dsh-screensaver/releases/latest/download/dsh-screensaver.tgz
-dsh plugin --profile web add https://github.com/realRoc/dsh-screensaver/releases/latest/download/dsh-screensaver-theme-subspace.tgz
+dsh plugin --profile web add github:realRoc/dsh-screensaver
+dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspace"
 ```
 
 ### Without dsh
 
 ```bash
-npx github:realRoc/dsh-screensaver --now            # cover the screen now, exit after you unlock
-npx github:realRoc/dsh-screensaver                  # stay in the background, press ⌃⌥⌘L to start
-npx github:realRoc/dsh-screensaver --now subspace   # with a theme (when it is installed or in DSH_SCREENSAVER_THEMES)
+npx dsh-screensaver --now               # cover the screen now, exit after you unlock
+npx dsh-screensaver                     # stay in the background, press ⌃⌥⌘L to start
+npx dsh-screensaver --now subspace      # with a theme (when it is installed or in DSH_SCREENSAVER_THEMES)
 ```
 
 Requirements: macOS 12 or later, Node.js 22 or later. Touch-to-unlock needs a Mac with Touch ID (or a Magic Keyboard with
@@ -107,14 +107,14 @@ Add an entry to your profile's `~/.dsh/profiles/<profile>/cordis.patch.yml` (it 
     shortcut: Control+Alt+Command+L   # Electron accelerator; '' disables the shortcut
 ```
 
-Standalone, pass the same fields as JSON: `DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}' npx github:realRoc/dsh-screensaver`.
+Standalone, pass the same fields as JSON: `DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}' npx dsh-screensaver`.
 
 ## Themes
 
 | Theme | id | Install | Shows agent sessions |
 | --- | --- | --- | --- |
 | Clock | `basic` | built in | No |
-| Subspace Jump | `subspace` | `github:realRoc/dsh-screensaver#path:/themes/subspace` | Yes |
+| Subspace Jump | `subspace` | `dsh-screensaver-theme-subspace` | Yes |
 
 More themes are coming. Themes are visual works licensed CC BY-NC-SA 4.0 (no commercial use). A theme is a folder with an `index.html` (runs in a sandboxed iframe, draws only) and a
 `saver.json`. Put your own in `~/.dsh/plugins-data/dsh-screensaver/themes/<id>/`, or publish it as an npm package with
@@ -159,7 +159,7 @@ No. It is a cover for when you step away at home or in the office and want your 
 security use ⌃⌘Q.
 
 **Do I need DeepSeek Harness?**
-No. `npx github:realRoc/dsh-screensaver` runs it standalone. dsh adds the `/screensaver` command, the agent tool and
+No. `npx dsh-screensaver` runs it standalone. dsh adds the `/screensaver` command, the agent tool and
 config.
 
 **Does it work on Windows or Linux?**
