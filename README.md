@@ -153,7 +153,8 @@ sessions. They are trademarks of their owners and are used only to identify thos
 - A small always-on-top window covers each display; the primary one runs in kiosk mode (hides the Dock and menu bar,
   blocks ⌘Tab and Force Quit).
 - `desk-unlock`, a Swift helper (`native/unlock/main.swift`), embeds the system Touch ID view (`LAAuthenticationView`) in
-  an invisible window above the screen saver, so touching the sensor unlocks with no dialog. It also reads battery and
+  an invisible window above the screen saver, so touching the sensor unlocks with no dialog. With the lid closed the
+  built-in sensor is off, so it waits for the lid to open (`AppleClamshellState`) and listens again right away. It also reads battery and
   Wi-Fi for the status bar (IOKit, CoreWLAN; no location permission, the network name is not read).
 - While up: `powerSaveBlocker('prevent-display-sleep')`. With `lidAwake` (default) and the authorization: `pmset -a disablesleep 1`, restored when the
   screen saver closes, when the process dies (a detached watchdog), at the next start if it was left on, and when the

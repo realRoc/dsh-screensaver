@@ -9,6 +9,8 @@
 //     图标平时是透明的（跟系统锁屏一样只有屏保网页上那行「使用触控 ID 或输入密码」），摸到传感器才淡出来。
 //     只认指纹；有人按键或点一下就退出码 3，由屏保弹系统验证框（可以输密码）。
 //     每次摸到传感器（不管认没认出来）打一行 touch，屏保收到就把 30 秒后藏起来的提示、状态栏再露出来。
+//     合着盖子（系统报「closed clamshell mode」，内置传感器用不了）就先等着，盖子一开马上接着等指纹；
+//     刚打开那几秒传感器还没回来，报错也不算数。只有没录指纹、没设密码、指纹被锁才算这台电脑做不了（退出码 2）。
 //
 //   desk-unlock --status
 //     打印一行 JSON：电池（没有电池是 null）和 Wi-Fi（没有无线网卡是 null），屏保右上角的状态图标用。
@@ -19,6 +21,7 @@
 import AppKit
 import CoreWLAN
 import Foundation
+import IOKit
 import IOKit.ps
 import LocalAuthentication
 import LocalAuthenticationEmbeddedUI
@@ -66,14 +69,28 @@ func finish(_ ok: Bool, _ why: String, unavailable: Bool = false) -> Never {
   exit(ok ? 0 : (unavailable ? 2 : 1))
 }
 
-/// 这些错误再试也没用：交给按键 + 密码那条路
+/// 这些错误再试也没用：交给按键 + 密码那条路。
+/// 不算 biometryNotAvailable：合盖、刚开盖传感器还没回来时也报它，那是暂时的（见 lidClosed）
 func hopeless(_ error: Error?) -> Bool {
   guard let e = error as? LAError else { return false }
   switch e.code {
-  case .biometryLockout, .biometryNotAvailable, .biometryNotEnrolled, .passcodeNotSet, .notInteractive: return true
+  case .biometryLockout, .biometryNotEnrolled, .passcodeNotSet, .notInteractive: return true
   default: return false
   }
 }
+
+/// 盖子是不是合着（IOPMrootDomain 的 AppleClamshellState）。合着时内置的 Touch ID 用不了；
+/// 外接带 Touch ID 的妙控键盘不受影响，所以只在验证失败时才看它。读不到当作开着
+func lidClosed() -> Bool {
+  let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+  guard root != 0 else { return false }
+  defer { IOObjectRelease(root) }
+  let v = IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue()
+  return (v as? Bool) ?? false
+}
+
+/// 开盖以后传感器要一会儿才回来：这么久之内的失败都再试
+let REOPEN_GRACE: TimeInterval = 5
 
 let ctx = LAContext()
 var err: NSError?
@@ -95,8 +112,21 @@ if !listen {
   finish(ok, why)
 }
 
-guard ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &err) else {
-  finish(false, err?.localizedDescription ?? "", unavailable: true)
+// 能不能等指纹：能就往下走；合着盖子就等它打开；刚开盖的几秒里失败也再试。
+// 等的时候没有盖住屏幕的窗口，有人按键 / 点一下是屏保网页自己收到，照样弹密码框
+var graceUntil: Date? = nil
+while !ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &err) {
+  if hopeless(err) { finish(false, err?.localizedDescription ?? "", unavailable: true) }
+  if lidClosed() {
+    graceUntil = nil
+  } else {
+    // 盖子开着：本来就没有 Touch ID 的机器（biometryType 是 none）不用等
+    if ctx.biometryType == .none { finish(false, err?.localizedDescription ?? "", unavailable: true) }
+    if graceUntil == nil { graceUntil = Date().addingTimeInterval(REOPEN_GRACE) }
+    if Date() > graceUntil! { finish(false, err?.localizedDescription ?? "", unavailable: true) }
+  }
+  Thread.sleep(forTimeInterval: 0.3)
+  err = nil
 }
 
 // 自己当前台程序：Touch ID 只认前台程序的验证。屏保（Electron）的 kiosk 只在它自己在前台时有效，
@@ -235,7 +265,8 @@ func evaluate() {
         finish(true, "")
       }
       let code = (error as? LAError)?.code.rawValue ?? 0
-      finish(false, "\(code) \(error?.localizedDescription ?? "")", unavailable: hopeless(error))
+      // 合盖时这里会报「配件已断开」（-13）之类：退出码 1，屏保一秒后重起，新起的那个会等盖子打开
+      finish(false, "\(code) \(error?.localizedDescription ?? "")", unavailable: hopeless(error) && !lidClosed())
     }
   }
 }
