@@ -3,6 +3,8 @@
 //
 //   书房(idle) ──有会话在跑──▶ 进塔(enter, 4.2s) ──▶ 登塔(run, 不限时) ──全部结束──▶ 回书房(leave, 4s) ──▶ 书房
 //
+// 开屏保时已经有会话在跑：先在书房停 OPEN_HOLD 秒，让人看清画面再扎进书里（亚空间进场 8.5 秒够长，不用停）；
+// 之后从塔里回到书房、又有会话开始，停 IDLE_HOLD 秒就走。
 // 跟亚空间主题同一套逻辑：左侧列这一轮登塔里的会话，结束的留着；回到书房 18 秒后法卷收起。
 // 屏保外壳是新版（saver.json 写了 "hud": true）时，右上角状态栏、底部提示、触控 ID 反馈也由主题画，位置跟外壳一样。
 import { banner, demoSeal, renderLedger, setHint, setStatus, showHud, touched, TX, ZH } from './hud.js'
@@ -11,6 +13,7 @@ import { magicTower as tower } from './scene.js'
 const $ = (id) => document.getElementById(id)
 const DEMO = location.hash.includes('demo')
 const GRACE = DEMO ? 3 : 15
+const OPEN_HOLD = 3, IDLE_HOLD = 1.5
 const isLive = (s) => s.status === 'running' || s.status === 'waiting'
 const ST = TX.st
 
@@ -59,7 +62,7 @@ tower.onFrame((dt) => {
   demoTick(dt)
   const running = sessions.some(isLive)
   const mode = tower.mode
-  if (mode === 'idle' && running && tower.modeT > 1.5) tower.enter()
+  if (mode === 'idle' && running && tower.modeT > (climbStart ? IDLE_HOLD : OPEN_HOLD)) tower.enter()
   else if (mode === 'run') {
     idleT = running ? 0 : idleT + dt
     if (idleT > GRACE && tower.modeT > 3) tower.leave()
