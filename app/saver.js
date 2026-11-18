@@ -272,7 +272,10 @@ export class Screensaver {
     if (this.wantsSessions) win.webContents.on('did-finish-load', () => this.sendSessions(this.agents.sessions, win))
     win.once('ready-to-show', () => {
       win.setBounds(b)
-      win.show()
+      // 副屏不激活程序：show() 在 Mac 上会把整个 Electron 拉到前台，要是主屏的 desk-unlock --listen 已经在等指纹，
+      // 前台就被抢走了（Touch ID 只认前台程序），摸了没反应。两块屏谁先好不一定，屏保中途插上屏幕也一样
+      if (primary) win.show()
+      else win.showInactive()
       if (primary) {
         // 先老式全屏，再 kiosk（kiosk 看到已经全屏就不再进原生全屏），只开在一个窗口上：presentation options 是整个程序的
         if (process.platform === 'darwin') win.setSimpleFullScreen(true)
