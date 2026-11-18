@@ -1,5 +1,5 @@
 // 主题从哪来：自带的、旁边装的主题包、环境变量、数据目录；名字中英文；id 重复时前面的优先。
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -45,5 +45,19 @@ describe('主题', () => {
       ['rain', 'rain', false],
       ['subspace', 'Subspace Jump', true],
     ])
+  })
+
+  it('仓库里每个主题都随 npm 包发出去（files 里有它的 index.html 和 saver.json），自带的不靠另装主题包', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const { files } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+    const shipped = (p) => files.some((f) => p === f || p.startsWith(`${f}/`))
+    const dirs = readdirSync(join(root, 'themes')).filter((d) => existsSync(join(root, 'themes', d, 'index.html')))
+    expect(dirs).toEqual(expect.arrayContaining(['basic', 'subspace']))
+    for (const d of dirs) {
+      expect(shipped(`themes/${d}/index.html`), d).toBe(true)
+      expect(shipped(`themes/${d}/saver.json`), d).toBe(true)
+    }
+    const ids = listThemes({ pkgDir: root, env: { DSH_SCREENSAVER_HOME: join(TMP, 'none') } }).map((t) => t.id)
+    expect(ids.slice(0, 2)).toEqual(['basic', 'subspace'])
   })
 })

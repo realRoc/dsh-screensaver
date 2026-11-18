@@ -1,9 +1,9 @@
 // 屏保主题从哪来。主题就是一个目录：index.html（在沙盒 iframe 里跑，只管画）+ saver.json（名字、要不要会话）。
 //
 // 主题可以分开装，想要哪个装哪个：
-// 1. 这个包自带的 themes/（基础版「时钟」）；
-// 2. 装在旁边的主题包：package.json 里写了 "dsh-screensaver": { "theme": "<目录，默认 .>" } 的 npm 包，
-//    比如 themes/subspace 单独装的 dsh-screensaver-theme-subspace。dsh 的 profile 是 hoisted 布局，
+// 1. 这个包自带的 themes/（「时钟」basic 和「亚空间跃迁」subspace，都随包发布）；
+// 2. 装在旁边的主题包：package.json 里写了 "dsh-screensaver": { "theme": "<目录，默认 .>" } 的 npm 包
+//    （别人做的第三方主题；id 和自带的重了以自带的为准）。dsh 的 profile 是 hoisted 布局，
 //    主题包和本包都在同一个 node_modules 下，看本包的上一层（带 @scope 的再往下一层）；
 // 3. 环境变量 DSH_SCREENSAVER_THEMES 列的目录（: 分隔，每个是一个主题，或者装着好几个主题的目录）；
 // 4. 数据目录下的 themes/<id>/，自己做着玩的主题放这里就行。

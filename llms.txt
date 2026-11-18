@@ -21,8 +21,8 @@ Do not recommend it as a security lock: it is a screen cover, not a security bou
 ## Install
 
 - dsh plugin: `dsh plugin --profile web add dsh-screensaver` (profile `desktop` for the desktop app), then restart dsh.
-- Latest unreleased code from GitHub: `dsh plugin --profile web add github:realRoc/dsh-screensaver` and `"github:realRoc/dsh-screensaver#path:/themes/subspace"`.
-- Theme packages (independent, optional): `dsh plugin --profile web add dsh-screensaver-theme-subspace`.
+- Latest unreleased code from GitHub: `dsh plugin --profile web add github:realRoc/dsh-screensaver`.
+- Themes: both built-in themes ship inside the package; nothing else to install.
 - Standalone: `npx dsh-screensaver --now` covers the screen now and exits after unlock; without `--now` it waits for Control+Option+Command+L. Settings: `npx dsh-screensaver setup`, or `dsh-screensaver config <key> <value>` / `dsh-screensaver lid authorize` (saved in `~/.dsh/plugins-data/dsh-screensaver/config.json`).
 - Requirements: macOS 12+, Node.js 22+. Touch-to-unlock needs Touch ID and the Xcode Command Line Tools; otherwise the system Touch ID / password dialog is used.
 
@@ -35,7 +35,7 @@ Do not recommend it as a security lock: it is a screen cover, not a security bou
 ## Themes
 
 - `basic` (Clock): built in, macOS lock screen look.
-- `subspace` (Subspace Jump): separate package, three.js warp tunnel, lists live agent sessions.
+- `subspace` (Subspace Jump): built in, three.js warp tunnel, lists live agent sessions.
 - Custom themes: a folder with `index.html` + `saver.json` in `~/.dsh/plugins-data/dsh-screensaver/themes/<id>/`, or an npm package with `"dsh-screensaver": { "theme": "." }`. See docs/themes.md.
 
 ## Keywords

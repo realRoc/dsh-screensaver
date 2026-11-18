@@ -45,17 +45,12 @@ dsh plugin --profile web add dsh-screensaver
 DeepSeek Harness 桌面版把 `web` 换成 `desktop`。装好后重启 dsh。第一次启动会下载 Electron 运行时（约 100 MB，只下载一次）；
 如果装了 Xcode 命令行工具，还会在本机编译 Touch ID 小程序。
 
-主题单独安装，需要哪个装哪个。只用内置的「时钟」就不用装下面这个：
-
-```bash
-dsh plugin --profile web add dsh-screensaver-theme-subspace
-```
+「时钟」和「亚空间跃迁」两个主题都随包自带，不用另装。
 
 想用 GitHub 上还没发布的最新代码，而不是 npm 上的发布版：
 
 ```bash
 dsh plugin --profile web add github:realRoc/dsh-screensaver
-dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspace"
 ```
 
 不装 dsh 也能用：
@@ -114,10 +109,10 @@ npx dsh-screensaver setup               # 改配置：合盖不睡（顺手授�
 
 ## 主题
 
-| 主题 | id | 安装方式 | 显示 agent 会话 |
+| 主题 | id | 来源 | 显示 agent 会话 |
 | --- | --- | --- | --- |
 | 时钟 | `basic` | 内置 | 否 |
-| 亚空间跃迁 | `subspace` | `dsh-screensaver-theme-subspace` | 是 |
+| 亚空间跃迁 | `subspace` | 内置 | 是 |
 
 更多主题陆续推出。每个主题就是一个文件夹：`index.html` 负责绘制（运行在沙盒 iframe 里），`saver.json` 写名称等信息。
 自己做的主题放进 `~/.dsh/plugins-data/dsh-screensaver/themes/<id>/` 就能用，也可以发布成 npm 包，在 `package.json` 里写上
@@ -171,9 +166,9 @@ DSH_SCREENSAVER_DEBUG=1 npm run now   # 打印页面里的 console 输出
 ### 发版
 
 推送 `v*` 标签会触发 [`.github/workflows/publish.yml`](.github/workflows/publish.yml)：跑测试，再通过 Trusted Publishing（不用令牌）
-把两个包发到 npm。某个包的版本 npm 上已有就跳过。
+把 `dsh-screensaver`（含主题）发到 npm。这个版本 npm 上已有就跳过。
 
-1. 改 `package.json` 的 `version`（主题有改动才改 `themes/subspace/package.json` 的版本）。
+1. 改 `package.json` 的 `version`。主题源码改过的话先重新打包 `themes/subspace/index.html`。
 2. 提交并推送到 `main`。
 3. 打标签并推送：`git tag vX.Y.Z && git push origin vX.Y.Z`。标签必须和根目录 `package.json` 的版本一致。
 
