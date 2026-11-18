@@ -3,6 +3,8 @@
 // 通过了主进程会关掉所有屏保窗口。
 // 主屏照着系统锁屏：底部一行「使用触控 ID 或输入密码」，右上角电池、Wi-Fi、菜单栏样式的日期时间；副屏只放主题画面。
 // 纯享：30 秒没人动，这些连同主题里的会话播报都淡掉，只剩画面；动鼠标、按键、摸 Touch ID 再露出来。
+// 主题的 saver.json 写了 "hud": true（地址带 hud=1）：右上角状态栏、底部提示由主题自己画，位置不变。
+// 外壳自己的藏起来，电池 / Wi-Fi（desk:status）、提示（desk:hint）、摸了指纹（desk:touch）照样算好转给主题。
 const desk = window.desk // preload.cjs 给的
 const q = new URLSearchParams(location.search)
 const primary = q.get('primary') === '1'
@@ -10,6 +12,12 @@ const frame = document.getElementById('theme')
 const hint = document.getElementById('hint')
 const $ = (id) => document.getElementById(id)
 const theme = q.get('theme')
+const hud = primary && q.get('hud') === '1'
+if (hud) document.body.classList.add('theme-hud')
+/** 发给主题（沙盒 iframe，没有同源，只能 postMessage） */
+function toTheme(msg) {
+  frame.contentWindow?.postMessage(msg, '*')
+}
 // 主题也拿到语言（?lang=zh|en），自己决定日期之类怎么写
 if (theme) frame.src = `${theme}?lang=${q.get('lang') === 'zh' ? 'zh' : 'en'}`
 // 文案照抄系统锁屏
@@ -35,12 +43,19 @@ let IDLE_HINT = ''
 let busy = false
 let hideTimer = 0
 let hintTimer = 0
-/** 底部那行字：平时是 IDLE_HINT，验证中、没解开时临时换一句，过一会儿换回来 */
-function say(text, ms = 0) {
-  if (!primary) return
+/** 现在底部那行字和它是哪种：idle 平时 / verifying 验证中 / failed 没解开（hud 主题拿去画） */
+let hintNow = { text: '', state: 'idle' }
+function showHint(text, state) {
   hint.textContent = text
+  hintNow = { text, state }
+  if (hud) toTheme({ type: 'desk:hint', ...hintNow })
+}
+/** 底部那行字：平时是 IDLE_HINT，验证中、没解开时临时换一句，过一会儿换回来 */
+function say(text, ms = 0, state = 'idle') {
+  if (!primary) return
+  showHint(text, state)
   clearTimeout(hintTimer)
-  if (ms) hintTimer = window.setTimeout(() => (hint.textContent = IDLE_HINT), ms)
+  if (ms) hintTimer = window.setTimeout(() => showHint(IDLE_HINT, 'idle'), ms)
 }
 // ---- 纯享：PURE_AFTER_MS 没人动就藏起提示、状态栏，告诉主题也藏起它的播报 ----
 const PURE_AFTER_MS = 30_000
@@ -49,7 +64,7 @@ let pureTimer = 0
 function setPure(on) {
   pure = on
   document.body.classList.toggle('pure', on)
-  frame.contentWindow?.postMessage({ type: 'desk:pure', on }, '*')
+  toTheme({ type: 'desk:pure', on })
 }
 /** 有人动了（或刚进屏保）：都露出来，重新数 30 秒 */
 function reveal() {
@@ -65,16 +80,19 @@ function wake() {
   clearTimeout(hideTimer)
   hideTimer = window.setTimeout(() => !busy && document.body.classList.remove('awake'), 4000)
 }
-// 摸了 Touch ID（主进程转过来的）：同样露出来
-desk.on('saver:touch', () => reveal())
+// 摸了 Touch ID（主进程转过来的）：同样露出来；result 是 match（认出来了）/ miss（没认出来）/ ''（老版本分不出来）
+desk.on('saver:touch', (result) => {
+  reveal()
+  if (hud) toTheme({ type: 'desk:touch', result: result === 'match' || result === 'miss' ? result : '' })
+})
 async function unlock() {
   if (busy) return
   busy = true
   wake()
-  say(t.verifying)
+  say(t.verifying, 0, 'verifying')
   try {
     const r = await desk.invoke('saver:unlock')
-    if (!r.ok) say(r.msg ? t.failed(r.msg) : IDLE_HINT, r.msg ? 4000 : 0)
+    if (!r.ok) say(r.msg ? t.failed(r.msg) : IDLE_HINT, r.msg ? 4000 : 0, r.msg ? 'failed' : 'idle')
   } finally {
     busy = false
   }
@@ -101,17 +119,28 @@ addEventListener('mousemove', (e) => {
 // 主题是沙盒 iframe（没有同源），只能 postMessage；主题开好后会发 desk:ready 来要一份。
 // 一起带上：是不是主屏（副屏主题只放画面）、是不是在用电池（主题降帧率、降分辨率）。
 let latest = null
+let status = null
 function forward() {
-  if (latest && frame.contentWindow) frame.contentWindow.postMessage({ type: 'desk:sessions', primary, ...latest }, '*')
+  if (latest) toTheme({ type: 'desk:sessions', primary, ...latest })
+}
+/** hud 主题开好了（或开得晚）：补一份提示和电池、Wi-Fi */
+function forwardHud() {
+  if (!hud) return
+  toTheme({ type: 'desk:hint', ...hintNow })
+  if (status) toTheme({ type: 'desk:status', ...status })
 }
 desk.on('saver:sessions', (p) => {
   latest = p
   forward()
 })
-frame.addEventListener('load', forward)
+frame.addEventListener('load', () => {
+  forward()
+  forwardHud()
+})
 addEventListener('message', (e) => {
   if (e.source !== frame.contentWindow || e.data?.type !== 'desk:ready') return
   forward()
+  forwardHud()
   if (pure) setPure(true) // 主题开得晚：补一句
 })
 void desk.invoke('saver:info').then((info) => {
@@ -121,6 +150,8 @@ void desk.invoke('saver:info').then((info) => {
 })
 const svgEl = (sel) => document.querySelector(sel)
 desk.on('saver:status', (st) => {
+  status = { battery: st.battery ?? null, wifi: st.wifi ?? null }
+  if (hud) toTheme({ type: 'desk:status', ...status })
   const b = st.battery
   $('batt').hidden = !b
   if (b) {
@@ -156,7 +187,7 @@ function tick() {
   $('clockT').textContent = zh ? `${h < 12 ? '上午' : '下午'}${h12}:${mm}` : `${h12}:${mm} ${h < 12 ? 'AM' : 'PM'}`
 }
 if (primary) {
-  $('status').hidden = false
+  $('status').hidden = hud
   tick()
   // 对准整分钟换
   window.setTimeout(

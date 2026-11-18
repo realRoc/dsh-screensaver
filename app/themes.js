@@ -1,7 +1,7 @@
 // 屏保主题从哪来。主题就是一个目录：index.html（在沙盒 iframe 里跑，只管画）+ saver.json（名字、要不要会话）。
 //
 // 主题可以分开装，想要哪个装哪个：
-// 1. 这个包自带的 themes/（「时钟」basic 和「亚空间跃迁」subspace，都随包发布）；
+// 1. 这个包自带的 themes/（「时钟」basic、「亚空间跃迁」subspace、「魔法书斋」magic-tower，都随包发布）；
 // 2. 装在旁边的主题包：package.json 里写了 "dsh-screensaver": { "theme": "<目录，默认 .>" } 的 npm 包
 //    （别人做的第三方主题；id 和自带的重了以自带的为准）。dsh 的 profile 是 hoisted 布局，
 //    主题包和本包都在同一个 node_modules 下，看本包的上一层（带 @scope 的再往下一层）；
@@ -12,6 +12,7 @@
 //   { "id": "subspace", "name": { "zh": "亚空间跃迁", "en": "Subspace Jump" }, "sessions": true }
 // id 不写就用目录名（主题包用包名去掉 dsh-screensaver-theme- 前缀）；name 可以是字符串；
 // "sessions": true 的主题才拿得到本机 Claude Code / Codex / DeepSeek Harness 会话的名字和进展。
+// "hud": true 的主题自己画右上角状态栏和底部提示（外壳把电池、Wi-Fi、提示、摸了指纹转给它，自己的藏起来）。
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { dataDir, PKG_DIR } from './dirs.js'
@@ -46,6 +47,7 @@ export function readTheme(dir, fallbackId = basename(dir), lang = 'en') {
   if (name && typeof name === 'object') name = name[lang] ?? name.en ?? name.zh ?? Object.values(name)[0]
   const theme = { id, name: typeof name === 'string' && name.trim() ? name.trim() : id, dir: resolve(dir) }
   if (meta.sessions === true) theme.sessions = true
+  if (meta.hud === true) theme.hud = true
   return theme
 }
 

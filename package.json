@@ -1,7 +1,7 @@
 {
   "name": "dsh-screensaver",
   "version": "0.3.0",
-  "description": "A lock-screen-style screen saver for macOS that keeps AI coding agents (Claude Code, Codex, DeepSeek Harness) running while you step away: Touch ID unlock, no sleep, lid-closed awake (after a one-time authorization), and two built-in themes (a lock-screen clock, and the Subspace Jump warp tunnel that shows your live agent sessions). DeepSeek Harness (dsh) plugin, also runs standalone.",
+  "description": "A lock-screen-style screen saver for macOS that keeps AI coding agents (Claude Code, Codex, DeepSeek Harness) running while you step away: Touch ID unlock, no sleep, lid-closed awake (after a one-time authorization), and three built-in themes (a lock-screen clock, the Subspace Jump warp tunnel and the Arcane Study pixel-art tower, the last two showing your live agent sessions). DeepSeek Harness (dsh) plugin, also runs standalone.",
   "icon": "assets/icon.png",
   "type": "module",
   "main": "app/main.js",
@@ -28,6 +28,11 @@
     "themes/subspace/README.md",
     "themes/subspace/LICENSE",
     "themes/subspace/THIRD_PARTY_NOTICES.md",
+    "themes/magic-tower/index.html",
+    "themes/magic-tower/saver.json",
+    "themes/magic-tower/README.md",
+    "themes/magic-tower/LICENSE",
+    "themes/magic-tower/THIRD_PARTY_NOTICES.md",
     "cordis.patch.yml",
     "llms.txt",
     "docs/themes.md",
@@ -41,7 +46,7 @@
     "start": "node bin/dsh-screensaver.js",
     "now": "node bin/dsh-screensaver.js --now",
     "test": "vitest run",
-    "build:themes": "npm --prefix themes/subspace run build"
+    "build:themes": "npm --prefix themes/subspace run build && npm --prefix themes/magic-tower run build"
   },
   "dependencies": {
     "electron": "^45.2.1"

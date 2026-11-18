@@ -226,7 +226,7 @@ export class Screensaver {
     win.setAlwaysOnTop(true, 'screen-saver')
     if (process.platform === 'darwin') win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
     this.wins.set(d.id, win)
-    void loadShell(win, { theme: themeUrl(this.current.id), primary: primary ? '1' : '', lang: saverLang() }).catch((e) =>
+    void loadShell(win, { theme: themeUrl(this.current.id), primary: primary ? '1' : '', lang: saverLang(), hud: this.current.hud ? '1' : '' }).catch((e) =>
       this.say(`[dsh-screensaver] screen failed to load: ${e?.message ?? e}`),
     )
     win.webContents.on('render-process-gone', (_e, d) => this.say(`[dsh-screensaver] screen renderer gone: ${d.reason}`))
@@ -320,12 +320,14 @@ export class Screensaver {
     const child = spawn(this.helper, ['--listen', '--lang', lang, REASON[lang]], { stdio: ['ignore', 'pipe', 'pipe'] })
     this.listener = child
     let out = ''
-    // 摸到传感器（认没认出来都算）打一行 touch：让主屏把 30 秒后藏起来的提示、状态栏露出来。
+    // 摸到传感器打一行 touch match（认出来了）/ touch miss（没认出来）：让主屏把 30 秒后藏起来的提示、状态栏露出来，
+    // 自己画提示的主题（"hud": true）还拿它做反馈。老版本只打 touch。
     // 输出一块块来，一行可能被切成两块，所以先拼成整行再认
     const readLine = lineReader((line) => {
-      if (line !== 'touch') return
+      const m = /^touch(?: (match|miss))?$/.exec(line)
+      if (!m) return
       const win = this.kioskWin
-      if (win && !win.isDestroyed()) win.webContents.send('saver:touch')
+      if (win && !win.isDestroyed()) win.webContents.send('saver:touch', m[1] ?? '')
     })
     child.stdout?.on('data', (b) => {
       out += b

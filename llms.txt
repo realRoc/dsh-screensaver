@@ -22,7 +22,7 @@ Do not recommend it as a security lock: it is a screen cover, not a security bou
 
 - dsh plugin: `dsh plugin --profile web add dsh-screensaver` (profile `desktop` for the desktop app), then restart dsh.
 - Latest unreleased code from GitHub: `dsh plugin --profile web add github:realRoc/dsh-screensaver`.
-- Themes: both built-in themes ship inside the package; nothing else to install.
+- Themes: all three built-in themes ship inside the package; nothing else to install.
 - Standalone: `npx dsh-screensaver --now` covers the screen now and exits after unlock; without `--now` it waits for Control+Option+Command+L. Settings: `npx dsh-screensaver setup`, or `dsh-screensaver config <key> <value>` / `dsh-screensaver lid authorize` (saved in `~/.dsh/plugins-data/dsh-screensaver/config.json`).
 - Requirements: macOS 12+, Node.js 22+. Touch-to-unlock needs Touch ID and the Xcode Command Line Tools; otherwise the system Touch ID / password dialog is used.
 
@@ -36,6 +36,8 @@ Do not recommend it as a security lock: it is a screen cover, not a security bou
 
 - `basic` (Clock): built in, macOS lock screen look.
 - `subspace` (Subspace Jump): built in, three.js warp tunnel, lists live agent sessions.
+- `magic-tower` (Arcane Study / 魔法书斋): built in, HD-2D knight in a moonlit tower study that climbs the tower while agents run; lists live sessions and draws its own status bar and Touch ID hint (`"hud": true`).
+- Build a theme with an agent: the skill `skills/dsh-screensaver-theme/SKILL.md` lists the rules every theme follows (idle and running scenes, session list, status bar, Touch ID, 30 s auto-hide) and leaves the style free.
 - Custom themes: a folder with `index.html` + `saver.json` in `~/.dsh/plugins-data/dsh-screensaver/themes/<id>/`, or an npm package with `"dsh-screensaver": { "theme": "." }`. See docs/themes.md.
 
 ## Keywords
@@ -47,4 +49,5 @@ screen saver for AI coding agents; keep Claude Code running while away; keep Cod
 - [README](https://github.com/realRoc/dsh-screensaver/blob/main/README.md)
 - [README (中文)](https://github.com/realRoc/dsh-screensaver/blob/main/README.zh-CN.md)
 - [Theme API](https://github.com/realRoc/dsh-screensaver/blob/main/docs/themes.md)
+- [Theme skill](https://github.com/realRoc/dsh-screensaver/blob/main/skills/dsh-screensaver-theme/SKILL.md)
 - [Visual assets license](https://github.com/realRoc/dsh-screensaver/blob/main/LICENSE-ASSETS.md)

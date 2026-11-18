@@ -1,0 +1,22 @@
+{
+  "name": "dsh-screensaver-theme-magic-tower",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Source and build script for the Arcane Study theme. It ships inside the dsh-screensaver package (themes/magic-tower); this package is not published on its own.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "demo": "node scripts/build.mjs && open 'index.html#demo'"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "three": "0.170.0"
+  },
+  "license": "CC-BY-NC-SA-4.0",
+  "author": "realRoc",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/realRoc/dsh-screensaver.git",
+    "directory": "themes/magic-tower"
+  }
+}

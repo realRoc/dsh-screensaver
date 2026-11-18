@@ -23,6 +23,13 @@ describe('主题', () => {
     expect(readTheme(join(TMP, 'empty'))).toBeNull()
   })
 
+  it('hud 要写 true：主题自己画状态栏和提示', () => {
+    theme(join(TMP, 'h'), { id: 'magic-tower', sessions: true, hud: true })
+    expect(readTheme(join(TMP, 'h'))).toEqual({ id: 'magic-tower', name: 'magic-tower', dir: join(TMP, 'h'), sessions: true, hud: true })
+    theme(join(TMP, 'h2'), { hud: 1 })
+    expect(readTheme(join(TMP, 'h2')).hud).toBeUndefined()
+  })
+
   it('本包自带的 + node_modules 里声明了 dsh-screensaver 主题的包 + 数据目录，基础版排第一', () => {
     const nm = join(TMP, 'node_modules')
     const pkg = join(nm, 'dsh-screensaver')
@@ -52,12 +59,12 @@ describe('主题', () => {
     const { files } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
     const shipped = (p) => files.some((f) => p === f || p.startsWith(`${f}/`))
     const dirs = readdirSync(join(root, 'themes')).filter((d) => existsSync(join(root, 'themes', d, 'index.html')))
-    expect(dirs).toEqual(expect.arrayContaining(['basic', 'subspace']))
+    expect(dirs).toEqual(expect.arrayContaining(['basic', 'magic-tower', 'subspace']))
     for (const d of dirs) {
       expect(shipped(`themes/${d}/index.html`), d).toBe(true)
       expect(shipped(`themes/${d}/saver.json`), d).toBe(true)
     }
     const ids = listThemes({ pkgDir: root, env: { DSH_SCREENSAVER_HOME: join(TMP, 'none') } }).map((t) => t.id)
-    expect(ids.slice(0, 2)).toEqual(['basic', 'subspace'])
+    expect(ids.slice(0, 3)).toEqual(['basic', 'magic-tower', 'subspace'])
   })
 })
