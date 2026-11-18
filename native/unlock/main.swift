@@ -236,14 +236,14 @@ func hook(_ name: String, encoding: String, then: @escaping () -> Void) {
   }
 }
 hook("layout", encoding: "v16@0:8", then: keepGlyphHidden)
-/// 摸到传感器：图标淡出来，再打一行 touch 告诉屏保（它会把藏起来的提示、状态栏露出来）
-func touched() {
+/// 摸到传感器：图标淡出来，再打一行 touch match / touch miss 告诉屏保（它会把藏起来的提示、状态栏露出来，主题可以拿来做反馈）
+func touched(_ match: Bool) {
   flashGlyph()
-  print("touch")
+  print(match ? "touch match" : "touch miss")
   fflush(stdout)
 }
-hook("authenticationViewModelDidReceiveBiometryNoMatch:", encoding: "v24@0:8@16") { DispatchQueue.main.async { touched() } }
-hook("authenticationViewModelDidReceiveBiometryMatch:", encoding: "v24@0:8@16") { DispatchQueue.main.async { touched() } }
+hook("authenticationViewModelDidReceiveBiometryNoMatch:", encoding: "v24@0:8@16") { DispatchQueue.main.async { touched(false) } }
+hook("authenticationViewModelDidReceiveBiometryMatch:", encoding: "v24@0:8@16") { DispatchQueue.main.async { touched(true) } }
 // 布局之外也兜一下：每 0.1 秒看一眼（便宜，只比一个数）
 func patrolGlyph() {
   keepGlyphHidden()

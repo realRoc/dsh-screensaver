@@ -1,0 +1,138 @@
+{
+  "dirs": 8,
+  "frames": 8,
+  "anims": {
+    "walk": {
+      "feetV": 0.1175,
+      "elevDeg": -6.0,
+      "cell": 112,
+      "worldSize": 2.6
+    },
+    "sit": {
+      "feetV": 0.1486,
+      "elevDeg": 22.0,
+      "cell": 160,
+      "worldSize": 1.9
+    }
+  },
+  "sitHands": {
+    "forward": 0.6,
+    "spread": 0.15,
+    "height": 0.87
+  },
+  "directions": "row d faces yaw = d*45deg counter-clockwise (from above) starting at 'facing the camera'; d=4 shows the back",
+  "ramps": [
+    {
+      "name": "ink",
+      "colors": [
+        "#0c0a18",
+        "#18142c",
+        "#262242",
+        "#363258",
+        "#46426c"
+      ],
+      "lit": true
+    },
+    {
+      "name": "steel",
+      "colors": [
+        "#14181f",
+        "#252b35",
+        "#3b414a",
+        "#626873",
+        "#a4aab4"
+      ],
+      "lit": true
+    },
+    {
+      "name": "navy",
+      "colors": [
+        "#0a0f1a",
+        "#101725",
+        "#19243a",
+        "#2a3650",
+        "#43527a"
+      ],
+      "lit": true
+    },
+    {
+      "name": "gold",
+      "colors": [
+        "#4a3520",
+        "#80633b",
+        "#b18a52",
+        "#d5b579",
+        "#f2e2b4"
+      ],
+      "lit": true
+    },
+    {
+      "name": "leather",
+      "colors": [
+        "#1a1010",
+        "#36211a",
+        "#583726",
+        "#7d5536",
+        "#a07a50"
+      ],
+      "lit": true
+    },
+    {
+      "name": "crimson",
+      "colors": [
+        "#2a0b16",
+        "#421323",
+        "#681a32",
+        "#8c3450",
+        "#b25a74"
+      ],
+      "lit": true
+    },
+    {
+      "name": "page",
+      "colors": [
+        "#5a4a36",
+        "#9c8664",
+        "#d2c098",
+        "#efe4c8",
+        "#fffaf0"
+      ],
+      "lit": true
+    },
+    {
+      "name": "glow",
+      "colors": [
+        "#1a4ad8",
+        "#3c8cff",
+        "#8cd4ff",
+        "#d8f4ff",
+        "#ffffff"
+      ],
+      "lit": false
+    },
+    {
+      "name": "gem",
+      "colors": [
+        "#0a1636",
+        "#142b5c",
+        "#2856a0",
+        "#6b91d3",
+        "#cfe0ff"
+      ],
+      "lit": true
+    }
+  ],
+  "steps": 5,
+  "shading": {
+    "ambient": 0.22,
+    "bands": [
+      0.32,
+      0.62,
+      0.9
+    ],
+    "flags": {
+      "outline": 1,
+      "inner": 2
+    }
+  }
+}

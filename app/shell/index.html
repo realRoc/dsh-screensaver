@@ -20,6 +20,8 @@
     /* 纯享：进屏保 30 秒没人动，底部那行字、右上角状态栏都淡掉（主题那边同时藏会话播报），只剩画面 */
     #hint, #status { transition: opacity 1.2s ease; }
     body.pure #hint, body.pure #status { opacity: 0; }
+    /* 主题自己画状态栏和提示（saver.json 的 "hud": true）：外壳的藏起来，但照样算好内容转给主题 */
+    body.theme-hud #hint, body.theme-hud #status { visibility: hidden; }
     /* 右上角：电池、Wi-Fi、日期时间，位置、大小、写法照着系统菜单栏（「11月15日 周日 下午6:10」） */
     #status {
       position: fixed; top: 6px; right: 14px; height: 24px; display: flex; align-items: center; gap: 13px;

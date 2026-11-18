@@ -6,13 +6,18 @@ dsh-screensaver 就是为这种时候做的：样子跟 Mac 锁屏一样，回�
 
 它是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）插件，不装 dsh 也能用 `npx` 单独运行。
 
-[English](README.md) · [llms.txt（写给 AI 看的简介）](llms.txt) · [主题开发](docs/themes.md) · [视觉素材授权](LICENSE-ASSETS.md)
+[English](README.md) · [llms.txt（写给 AI 看的简介）](llms.txt) · [主题开发](docs/themes.md) · [主题 skill](skills/dsh-screensaver-theme/SKILL.md) · [视觉素材授权](LICENSE-ASSETS.md)
 
 ![「亚空间跃迁」主题：跃迁途中列出正在运行的 Claude Code、Codex、DeepSeek Harness 会话](docs/images/subspace-zh.jpg)
 
-| 时钟（内置） | 亚空间跃迁（独立主题包） |
-| --- | --- |
-| ![「时钟」主题：仿 macOS 锁屏，日期时间、电池、Wi-Fi，底部一行「使用触控 ID 或输入密码」](docs/images/basic-zh.jpg) | 用 three.js 画的跃迁隧道（见上图）。有 agent 在跑就进入亚空间，左侧列出每个会话，用各家产品自己的图标区分。亚空间里在星云雷暴、浪涌龙卷、高斯粒子三种画风之间自然切换。 |
+每个主题都有两幅画面：没有 agent 在跑时的静止画面，和 agent 在跑时的运动画面，会自己来回切换。
+下面每段动图都是一幅画面 3 秒、转场、再另一幅画面 5 秒。
+
+| | agent 开始跑：静止 → 运动 | agent 全部结束：运动 → 静止 |
+| --- | --- | --- |
+| **亚空间跃迁**<br>`subspace` | ![亚空间跃迁：常规宇宙里三颗恒星，镜头锁定入口、跃迁进亚空间隧道，左侧列出会话](docs/images/subspace-enter.gif) | ![亚空间跃迁：会话全部结束，脱离隧道，回到三星系统](docs/images/subspace-exit.gif) |
+| **魔法书斋**<br>`magic-tower` | ![魔法书斋：塔顶书房里骑士在月光下读书，镜头扎进书页、穿过符文传送门，骑士沿塔里的书阶上行](docs/images/magic-tower-enter.gif) | ![魔法书斋：会话全部结束，一本书飞到镜头前打开，回到月光下的书房](docs/images/magic-tower-exit.gif) |
+| **时钟**<br>`basic` | ![「时钟」主题：仿 macOS 锁屏，日期时间、电池、Wi-Fi，底部一行「使用触控 ID 或输入密码」](docs/images/basic-zh.jpg) | 内置：仿 macOS 锁屏，没有动画场景。 |
 
 ## 和系统锁屏、系统屏保、动态壁纸有什么不同
 
@@ -45,7 +50,7 @@ dsh plugin --profile web add dsh-screensaver
 DeepSeek Harness 桌面版把 `web` 换成 `desktop`。装好后重启 dsh。第一次启动会下载 Electron 运行时（约 100 MB，只下载一次）；
 如果装了 Xcode 命令行工具，还会在本机编译 Touch ID 小程序。
 
-「时钟」和「亚空间跃迁」两个主题都随包自带，不用另装。
+「时钟」「亚空间跃迁」「魔法书斋」三个主题都随包自带，不用另装。
 
 想用 GitHub 上还没发布的最新代码，而不是 npm 上的发布版：
 
@@ -113,10 +118,28 @@ npx dsh-screensaver setup               # 改配置：合盖不睡（顺手授�
 | --- | --- | --- | --- |
 | 时钟 | `basic` | 内置 | 否 |
 | 亚空间跃迁 | `subspace` | 内置 | 是 |
+| 魔法书斋 | `magic-tower` | 内置 | 是 |
 
-更多主题陆续推出。每个主题就是一个文件夹：`index.html` 负责绘制（运行在沙盒 iframe 里），`saver.json` 写名称等信息。
+- **亚空间跃迁**：常规宇宙里三颗恒星绕转；agent 在跑时跃迁进亚空间隧道，在星云雷暴、浪涌龙卷、高斯粒子三种画风之间切换。
+- **魔法书斋**：HD-2D 像素场景。塔顶书房里骑士在月光下读书；agent 在跑时镜头扎进书页、进塔，骑士沿书阶上行。左侧法卷列出会话，
+  右上角状态栏（带今晚的月相）和底部的触控 ID 法阵也由它自己画，位置跟外壳一样。
+
+所有主题的布局一样：会话列表在左侧，日期时间在右上角，触控 ID 提示在底部正中；30 秒没人动就都淡掉，只剩画面。
+
+每个主题就是一个文件夹：`index.html` 负责绘制（运行在沙盒 iframe 里），`saver.json` 写名称等信息。
 自己做的主题放进 `~/.dsh/plugins-data/dsh-screensaver/themes/<id>/` 就能用，也可以发布成 npm 包，在 `package.json` 里写上
 `"dsh-screensaver": { "theme": "." }`。详见 [docs/themes.md](docs/themes.md)。
+
+### 做一个自己的主题
+
+[`skills/dsh-screensaver-theme`](skills/dsh-screensaver-theme/SKILL.md) 是一个 agent skill，写的是每个主题都要守的规矩，不管画风：
+静止画面和运动画面以及中间的转场、会话列表、右上角状态栏和时间、触控 ID 反馈、30 秒自动隐藏、副屏和用电池时降帧、`#demo` 演示页、打包，
+还附了录 README 动图的脚本。画风完全由你定。
+
+把这个文件夹复制到 `~/.claude/skills/`（或项目里的 `.claude/skills/`）给 Claude Code 用，或者让别的 coding agent 读 `SKILL.md`，
+然后说出你的脑洞：「做一个 dsh-screensaver 主题，……」。`themes/` 里两个主题是可以照着看的完整实现。
+
+欢迎新主题、新脑洞，也欢迎一起改进这个 skill：主题放到 `themes/` 下开 PR，想法可以先开 issue 聊。skill 大家一起维护，碰到它没写到的规矩就补上。
 
 ## 能识别哪些 agent 会话
 
@@ -159,7 +182,8 @@ git clone https://github.com/realRoc/dsh-screensaver && cd dsh-screensaver
 npm install
 npm test                       # 运行测试（vitest）
 npm run now                    # 立即开启屏保试一下
-npm run build:themes           # 修改 themes/subspace/src 后重新打包 index.html
+npm run build:themes           # 修改 themes/*/src 后重新打包 index.html
+node skills/dsh-screensaver-theme/scripts/record-gif.mjs …   # 录 README 动图，用法见脚本开头的注释
 DSH_SCREENSAVER_DEBUG=1 npm run now   # 打印页面里的 console 输出
 ```
 

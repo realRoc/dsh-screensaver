@@ -9,13 +9,18 @@ running, waiting for your approval, finished or stopped.
 It is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh) plugin, and it also runs on its own
 with `npx`.
 
-[中文说明](README.zh-CN.md) · [llms.txt (summary for AI assistants)](llms.txt) · [Theme API](docs/themes.md) · [Visual assets license](LICENSE-ASSETS.md)
+[中文说明](README.zh-CN.md) · [llms.txt (summary for AI assistants)](llms.txt) · [Theme API](docs/themes.md) · [Theme skill](skills/dsh-screensaver-theme/SKILL.md) · [Visual assets license](LICENSE-ASSETS.md)
 
 ![Subspace Jump theme: Claude Code, Codex and DeepSeek Harness sessions listed during a warp jump](docs/images/subspace.jpg)
 
-| Clock (built in) | Subspace Jump (built in) |
-| --- | --- |
-| ![Clock theme: a macOS-style lock screen with date, time, battery, Wi-Fi and "Touch ID or Enter Password"](docs/images/basic-zh.jpg) | A three.js warp tunnel (above): when agents are running it jumps into subspace and lists each session with its own product icon. Inside, it drifts between a nebula storm, a vortex of ocean waves and a tunnel of Gaussian splats. |
+Every theme has an idle scene for when nothing is running and a running scene for when your agents are working, and
+switches between them by itself. Each clip below is 3 s of one scene, the transition, then 5 s of the other.
+
+| | Agents start: idle → running | Agents finish: running → idle |
+| --- | --- | --- |
+| **Subspace Jump**<br>`subspace` | ![Subspace Jump: three suns in normal space, then the camera locks onto a portal and jumps into the subspace tunnel while sessions are listed on the left](docs/images/subspace-enter.gif) | ![Subspace Jump: all sessions finish, the tunnel ends and the camera drops back to the three suns](docs/images/subspace-exit.gif) |
+| **Arcane Study**<br>`magic-tower` | ![Arcane Study: a knight reads by moonlight in a tower study, then the camera dives into the book through a rune portal and the knight climbs the tower stairs](docs/images/magic-tower-enter.gif) | ![Arcane Study: all sessions finish, a book flies to the camera and opens, and the scene returns to the moonlit study](docs/images/magic-tower-exit.gif) |
+| **Clock**<br>`basic` | ![Clock theme: a macOS-style lock screen with date, time, battery, Wi-Fi and "Touch ID or Enter Password"](docs/images/basic-zh.jpg) | Built in: a macOS-style lock screen with no scenes. |
 
 ## Why not the macOS screen saver, the lock screen, or a wallpaper?
 
@@ -51,7 +56,7 @@ dsh plugin --profile web add dsh-screensaver
 Use `desktop` instead of `web` for the desktop app profile, then restart dsh. The first start downloads the Electron
 runtime (about 100 MB, once) and compiles the Touch ID helper if the Xcode Command Line Tools are installed.
 
-Both themes, Clock and Subspace Jump, ship inside this package; there is nothing else to install.
+All three themes, Clock, Subspace Jump and Arcane Study, ship inside this package; there is nothing else to install.
 
 Want the latest unreleased code from GitHub instead of the npm release:
 
@@ -124,10 +129,34 @@ uses its own config.
 | --- | --- | --- | --- |
 | Clock | `basic` | built in | No |
 | Subspace Jump | `subspace` | built in | Yes |
+| Arcane Study | `magic-tower` | built in | Yes |
 
-More themes are coming. Themes are visual works licensed CC BY-NC-SA 4.0 (no commercial use). A theme is a folder with an `index.html` (runs in a sandboxed iframe, draws only) and a
+- **Subspace Jump**: three suns orbit in normal space; while agents run, the camera jumps into a warp tunnel that drifts
+  between a nebula storm, a vortex of ocean waves and a tunnel of Gaussian splats.
+- **Arcane Study**: an HD-2D pixel scene. A knight reads by moonlight in a tower study; while agents run, the camera
+  dives into the book and the knight climbs the tower. Sessions are listed on a rune ledger, and the theme draws its own
+  status bar (with tonight's moon phase) and Touch ID ring in the same places as the shell.
+
+In every theme the session list is on the left, the date and time at the top right and the Touch ID hint at the bottom
+centre, and all of them fade out after 30 s without input, leaving only the scene.
+
+Themes are visual works licensed CC BY-NC-SA 4.0 (no commercial use). A theme is a folder with an `index.html` (runs in a sandboxed iframe, draws only) and a
 `saver.json`. Put your own in `~/.dsh/plugins-data/dsh-screensaver/themes/<id>/`, or publish it as an npm package with
 `"dsh-screensaver": { "theme": "." }` in its `package.json`. See [docs/themes.md](docs/themes.md).
+
+### Make your own theme
+
+[`skills/dsh-screensaver-theme`](skills/dsh-screensaver-theme/SKILL.md) is an agent skill with the rules every theme
+follows, whatever it looks like: an idle scene and a running scene with transitions, the session list, the status bar
+and clock, Touch ID feedback, hiding after 30 s, secondary displays and battery, the `#demo` page, packaging, and a
+script that records the two README GIFs. It leaves the art style entirely to you.
+
+Copy the folder into `~/.claude/skills/` (or your project's `.claude/skills/`) for Claude Code, or point any coding
+agent at `SKILL.md`, then describe your idea: "make a dsh-screensaver theme where…". Read the two reference themes in
+`themes/` for working code.
+
+New themes, wild ideas and improvements to the skill itself are all welcome: open a PR with your theme under `themes/`,
+or an issue to pitch an idea. The skill is maintained together; if you hit a rule it doesn't cover, add it.
 
 ## Which agent sessions are detected
 
@@ -188,7 +217,8 @@ git clone https://github.com/realRoc/dsh-screensaver && cd dsh-screensaver
 npm install
 npm test                       # vitest
 npm run now                    # try it
-npm run build:themes           # rebuild themes/subspace/index.html after editing themes/subspace/src
+npm run build:themes           # rebuild themes/*/index.html after editing themes/*/src
+node skills/dsh-screensaver-theme/scripts/record-gif.mjs …   # record README GIFs; usage at the top of the script
 DSH_SCREENSAVER_DEBUG=1 npm run now   # log page console messages
 ```
 
@@ -205,7 +235,8 @@ Pushing a `v*` tag runs [`.github/workflows/publish.yml`](.github/workflows/publ
 
 Code is MIT ([LICENSE](LICENSE)). All visual assets, meaning every theme under `themes/` and the screenshots under
 `docs/images/`, are **CC BY-NC-SA 4.0: no commercial use** ([LICENSE-ASSETS.md](LICENSE-ASSETS.md)). Third-party notices:
-[themes/subspace/THIRD_PARTY_NOTICES.md](themes/subspace/THIRD_PARTY_NOTICES.md).
+[themes/subspace/THIRD_PARTY_NOTICES.md](themes/subspace/THIRD_PARTY_NOTICES.md),
+[themes/magic-tower/THIRD_PARTY_NOTICES.md](themes/magic-tower/THIRD_PARTY_NOTICES.md).
 
 <!-- Keywords: screen saver for AI coding agents, keep Claude Code running when away, keep Codex running, prevent Mac sleep
 while an agent runs, macOS lock screen alternative, Touch ID screen saver, keep Mac awake with lid closed, caffeinate

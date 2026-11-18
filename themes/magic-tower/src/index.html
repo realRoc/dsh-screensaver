@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<!-- 魔法书斋屏保的页面模板：scripts/build.mjs 把 src/*.js（连同 three.js、精灵表）打包内联进来、图标换成 data: 地址，
+     输出到主题包根目录的 index.html。主题在沙盒 iframe 里跑，什么都不能从外面加载。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:">
+<title>魔法书斋</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --gold: #d5b579;
+    --gold-hi: #f2e2b4;
+    --gold-dim: rgb(213 181 121 / 0.42);
+    --gold-faint: rgb(213 181 121 / 0.16);
+    --ivory: #f3ead6;
+    --ink: #e8eefc;
+    --moon: #bcd3ff;
+    --moon-dim: rgb(188 211 255 / 0.58);
+    --moon-faint: rgb(188 211 255 / 0.32);
+    --glint: #8fc2ff;
+    --amber: #ffc46b;
+    --crimson: #e8798f;
+    --serif: "Songti SC", "STSong", "Iowan Old Style", "Palatino", "Times New Roman", serif;
+    --sans: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #070b16; color: var(--ink);
+    font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+  #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+  svg.defs { position: absolute; width: 0; height: 0; }
+
+  /* ================= 左侧：星辉法卷（会话监控） ================= */
+  #ledger {
+    position: fixed; left: 3.4vw; top: 50%; width: min(420px, 34vw); translate: 0 -50%;
+    padding: 22px 22px 16px; box-sizing: border-box;
+    background:
+      radial-gradient(120% 70% at 0% 0%, rgb(143 194 255 / 0.10), transparent 60%),
+      linear-gradient(165deg, rgb(16 24 50 / 0.74), rgb(8 12 28 / 0.52));
+    border: 1px solid var(--gold-faint);
+    box-shadow: inset 0 0 0 1px rgb(143 194 255 / 0.05), inset 0 0 48px rgb(110 150 255 / 0.07), 0 18px 50px rgb(0 0 0 / 0.38);
+    -webkit-backdrop-filter: blur(7px) saturate(1.15); backdrop-filter: blur(7px) saturate(1.15);
+    opacity: 0; transition: opacity 1.4s ease;
+  }
+  #ledger.on { opacity: 1; }
+  /* 书页一样的双线框 */
+  #ledger::before { content: ""; position: absolute; inset: 5px; border: 1px solid rgb(213 181 121 / 0.10); pointer-events: none; }
+  /* 四角金色卷草 */
+  #ledger .corner { position: absolute; width: 30px; height: 30px; color: var(--gold); opacity: 0.85;
+    filter: drop-shadow(0 0 4px rgb(213 181 121 / 0.35)); }
+  #ledger .corner.tl { left: -3px; top: -3px; }
+  #ledger .corner.tr { right: -3px; top: -3px; scale: -1 1; }
+  #ledger .corner.bl { left: -3px; bottom: -3px; scale: 1 -1; }
+  #ledger .corner.br { right: -3px; bottom: -3px; scale: -1 -1; }
+  /* 顶边正中一枚月相徽记（跟右上角同一个月相） */
+  #ledger .crest { position: absolute; left: 50%; top: 0; width: 26px; height: 26px; translate: -50% -50%;
+    border-radius: 50%; background: #0b1226; box-shadow: 0 0 0 1px var(--gold-dim), 0 0 14px rgb(143 194 255 / 0.35); }
+  #ledger .crest svg { width: 100%; height: 100%; display: block; }
+
+  #ledger header { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 2px; margin-bottom: 14px;
+    color: var(--moon-dim); font-size: 11.5px; }
+  #ledger header > * { white-space: nowrap; }
+  :lang(en) #ledger header b { letter-spacing: 0.06em; font-size: 14.5px; }
+  #ledger header b { font: 600 14px/1 var(--serif); letter-spacing: 0.22em; color: var(--gold-hi);
+    text-shadow: 0 0 12px rgb(213 181 121 / 0.35); }
+  #ledger header .gem { width: 7px; height: 7px; rotate: 45deg; align-self: center; flex: none;
+    background: var(--glint); box-shadow: 0 0 10px var(--glint), 0 0 2px #fff inset; }
+  #ledger.calm header .gem { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+  @media (prefers-reduced-motion: no-preference) {
+    #ledger:not(.calm) header .gem { animation: breathe 1.8s ease-in-out infinite; }
+  }
+
+  #spells { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  #spells li {
+    display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; column-gap: 12px; align-items: start;
+    padding: 10px 0 11px; position: relative;
+    transition: opacity 0.7s ease, translate 0.7s ease, filter 0.7s ease;
+  }
+  #spells li + li { border-top: 1px solid rgb(213 181 121 / 0.09); }
+  @starting-style { #spells li { opacity: 0; translate: -14px 0; } }
+  #spells li[data-closing] { opacity: 0; translate: -14px 0; }
+  @media (prefers-reduced-motion: reduce) {
+    #spells li { transition-property: opacity; }
+    @starting-style { #spells li { translate: none; } }
+    #spells li[data-closing] { translate: none; }
+  }
+  #spells li.done, #spells li.aborted { opacity: 0.58; }
+
+  /* 法印：一圈符文环（按状态变色 / 转动）+ 中间各家图标 */
+  .sigil { position: relative; width: 32px; height: 32px; margin-top: 1px; }
+  .sigil .ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; color: var(--glint); }
+  .sigil .disc { position: absolute; inset: 5px; border-radius: 50%; display: grid; place-items: center; overflow: hidden;
+    background: radial-gradient(circle at 35% 30%, #1d2a52, #0a1024 75%); box-shadow: inset 0 0 0 1px rgb(213 181 121 / 0.35); }
+  .sigil.claude .disc i { width: 13px; height: 13px; background: #D97757;
+    -webkit-mask: url(__ICON_CLAUDE__) center / contain no-repeat; mask: url(__ICON_CLAUDE__) center / contain no-repeat; }
+  .sigil.codex .disc { box-shadow: inset 0 0 0 1px rgb(213 181 121 / 0.5); }
+  .sigil.codex .disc i { width: 100%; height: 100%; display: block; background: url(__ICON_CODEX__) center / cover no-repeat; }
+  .sigil.dsh .disc { background: #f4f1ea; }
+  .sigil.dsh .disc i { width: 15px; height: 15px; display: block; background: url(__ICON_DSH__) center / contain no-repeat; }
+  li.waiting .sigil .ring { color: var(--amber); }
+  li.done .sigil .ring { color: var(--gold); }
+  li.aborted .sigil .ring { color: var(--crimson); }
+  .sigil .ring .runes { transform-origin: 16px 16px; }
+  @media (prefers-reduced-motion: no-preference) {
+    li.running .sigil .ring .runes { animation: spin 14s linear infinite; }
+    li.waiting .sigil .ring { animation: beckon 1.6s ease-in-out infinite; }
+  }
+  li.running .sigil .ring, li.waiting .sigil .ring { filter: drop-shadow(0 0 4px currentColor); }
+  li.done .sigil .ring .runes, li.aborted .sigil .ring .runes { display: none; }
+  .sigil .ring .seal { display: none; }
+  li.done .sigil .ring .seal, li.aborted .sigil .ring .seal { display: inline; }
+  li.aborted .sigil .ring .seal { stroke-dasharray: 14 6 22 9; }
+
+  .name { font: 14px/1.35 var(--serif); color: var(--ivory); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prog { font: 11.5px/1.5 var(--mono); color: var(--moon-dim); white-space: nowrap; overflow: hidden; margin-top: 3px;
+    /* 超长时末尾渐隐，不截字（完整文字还在 DOM 里） */
+    --fade: 0px;
+    mask: linear-gradient(#000, #000) no-clip subtract,
+          linear-gradient(to right, transparent, #000) 100% 0 / var(--fade) 100% no-repeat no-clip;
+    animation: truncated linear both; animation-timeline: scroll(self inline); }
+  @property --fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+  @keyframes truncated { from, to { --fade: 2.2rem; } }
+  .prog .caret { color: var(--glint); margin-right: 6px; font-size: 10px; }
+  li.waiting .prog { color: rgb(255 196 107 / 0.85); }
+  li.waiting .prog .caret { color: var(--amber); }
+  .prog.fresh { animation: truncated linear both, ink 1.1s ease-out; animation-timeline: scroll(self inline), auto; }
+  .meta { text-align: right; white-space: nowrap; font: 11px/1.5 var(--mono); color: var(--moon-faint); }
+  .st { display: block; font: 12px/1.35 var(--serif); letter-spacing: 0.08em; }
+  .st.running { color: #a9d0ff; } .st.waiting { color: var(--amber); } .st.done { color: var(--gold); } .st.aborted { color: var(--crimson); }
+  .tm svg { width: 7px; height: 9px; margin-right: 4px; vertical-align: -1px; color: var(--gold-dim); }
+  /* 在跑的会话下面一根法力丝线，光点沿线游走 */
+  .thread { grid-column: 2 / -1; height: 1px; margin-top: 8px; position: relative; overflow: hidden;
+    background: linear-gradient(90deg, rgb(143 194 255 / 0.28), rgb(143 194 255 / 0.04)); }
+  li:not(.running) .thread { display: none; }
+  .thread::after { content: ""; position: absolute; top: -1px; left: 0; width: 28%; height: 3px; translate: -100% 0;
+    background: radial-gradient(closest-side, rgb(215 235 255 / 0.95), transparent); opacity: 0; }
+  @media (prefers-reduced-motion: no-preference) {
+    .thread::after { opacity: 1; animation: glide 2.8s cubic-bezier(.45, .05, .55, .95) infinite; }
+    li:nth-child(2n) .thread::after { animation-delay: -1.1s; }
+    li:nth-child(3n) .thread::after { animation-delay: -1.9s; }
+  }
+
+  #ledger footer { margin-top: 12px; padding-top: 11px; position: relative; display: flex; flex-wrap: wrap; column-gap: 0.6em;
+    font: 11px/1.6 var(--mono); color: var(--moon-faint); letter-spacing: 0.04em; }
+  #ledger footer span { white-space: nowrap; }
+  #ledger footer span + span::before { content: "· "; }
+  #ledger footer::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold-dim) 30%, var(--gold-dim) 70%, transparent); }
+  #ledger footer::after { content: ""; position: absolute; left: 50%; top: -3px; width: 6px; height: 6px; rotate: 45deg; translate: -50% 0;
+    background: #0d1430; box-shadow: 0 0 0 1px var(--gold-dim); }
+
+  /* ================= 右上角：星象（电池、Wi-Fi、月相、日期时间） ================= */
+  /* 位置和系统菜单栏一样（外壳的状态栏也在这）；外壳是新版、给了 desk:hint 才显示，不然外壳自己画 */
+  #astro { position: fixed; top: 6px; right: 14px; height: 24px; display: flex; align-items: center; gap: 13px;
+    color: var(--ivory); font: 500 13px/1 var(--sans); font-variant-numeric: tabular-nums;
+    filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.45)); }
+  #astro::after { content: ""; position: absolute; right: 0; left: 30%; bottom: -5px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold-dim)); }
+  #astro svg { display: block; overflow: visible; }
+  #batt { display: flex; align-items: center; gap: 6px; }
+  #batt .vial { color: var(--gold); }
+  #batt.low .vial { color: var(--crimson); }
+  #wifi { color: var(--gold-hi); }
+  #moon { width: 15px; height: 15px; filter: drop-shadow(0 0 4px rgb(143 194 255 / 0.55)); }
+  #clock { margin-left: 3px; white-space: nowrap; font: 500 13.5px/1 var(--serif); letter-spacing: 0.04em; color: var(--ivory);
+    font-variant-numeric: normal; text-shadow: 0 0 10px rgb(213 181 121 / 0.3); }
+  #clock span + span { margin-left: 0.6em; color: var(--gold-hi); }
+  #astro[hidden], #astro [hidden] { display: none; }
+
+  /* ================= 中间下方：触控 ID 法阵 ================= */
+  /* 系统指纹图标（desk-unlock 画的，摸到才出来）在提示文字上面：中心离底边约 7vh + 52px。法阵套在它外面 */
+  #seal { position: fixed; left: 50%; bottom: calc(7vh + 52px); width: 128px; height: 128px; translate: -50% 50%;
+    pointer-events: none; color: var(--gold); opacity: 0.3; scale: 0.92;
+    /* 下沿淡掉，像一圈光环罩在指纹上，不压住下面那行提示 */
+    mask: linear-gradient(to bottom, #000 58%, transparent 76%);
+    transition: opacity 0.6s ease, scale 0.6s cubic-bezier(.2, .9, .3, 1.3), color 0.4s ease, filter 0.6s ease; }
+  #seal svg { width: 100%; height: 100%; overflow: visible; }
+  #seal .outer, #seal .inner { transform-origin: 64px 64px; }
+  @media (prefers-reduced-motion: no-preference) {
+    #seal .outer { animation: spin 80s linear infinite; }
+    #seal .inner { animation: spin 50s linear infinite reverse; }
+    #seal[data-state="touch"] .outer, #seal[data-state="match"] .outer, #seal[data-state="verifying"] .outer { animation-duration: 9s; }
+    #seal[data-state="touch"] .inner, #seal[data-state="match"] .inner, #seal[data-state="verifying"] .inner { animation-duration: 6s; }
+    #seal[data-state="miss"] svg { animation: shake 0.5s ease; }
+  }
+  #seal .fp { display: none; color: var(--moon); }
+  #seal[data-demo] .fp { display: inline; }
+  #seal[data-state="touch"], #seal[data-state="verifying"] { opacity: 1; scale: 1; color: var(--glint);
+    filter: drop-shadow(0 0 6px rgb(143 194 255 / 0.8)); }
+  #seal[data-state="match"] { opacity: 1; scale: 1.08; color: var(--gold-hi); filter: drop-shadow(0 0 10px rgb(242 226 180 / 0.9)); }
+  #seal[data-state="miss"], #seal[data-state="failed"] { opacity: 0.95; scale: 1; color: var(--crimson);
+    filter: drop-shadow(0 0 6px rgb(232 121 143 / 0.7)); }
+  #seal .bloom { opacity: 0; transform-origin: 64px 64px; transition: opacity 0.5s, scale 0.9s ease-out; scale: 0.6; }
+  #seal:is([data-state="touch"], [data-state="match"], [data-state="miss"]) .bloom { opacity: 0.55; scale: 1; }
+
+  #hint { position: fixed; left: 0; right: 0; bottom: 7vh; text-align: center; white-space: nowrap;
+    font: 13px/18px var(--serif); letter-spacing: 0.12em; color: rgb(243 234 214 / 0.82);
+    text-shadow: 0 1px 3px rgb(0 0 0 / 0.5), 0 0 12px rgb(213 181 121 / 0.25); transition: opacity 0.3s, color 0.3s; }
+  #hint span::before, #hint span::after { content: ""; display: inline-block; width: 26px; height: 1px; vertical-align: middle;
+    margin: 0 12px; background: linear-gradient(90deg, transparent, var(--gold-dim)); }
+  #hint span::after { background: linear-gradient(90deg, var(--gold-dim), transparent); }
+  #hint:empty, #hint span:empty { opacity: 0; }
+  #hint.miss, #hint.failed { color: #f3b6c2; }
+
+  /* ================= 横幅：进塔 / 回书房 ================= */
+  #banner { position: fixed; left: 50%; top: 16vh; translate: -50% 0; white-space: nowrap;
+    font: 14px/1 var(--serif); letter-spacing: 0.55em; color: var(--gold-hi);
+    text-shadow: 0 0 16px rgb(213 181 121 / 0.75), 0 0 2px rgb(0 0 0 / 0.6); opacity: 0; transition: opacity 0.9s; }
+  #banner.on { opacity: 1; }
+
+  #astro, #hint, #seal { visibility: hidden; }
+  body.hud #astro, body.hud #hint, body.hud #seal { visibility: visible; }
+  /* 副屏只放画面 */
+  body.secondary #ledger, body.secondary #banner, body.secondary #astro, body.secondary #hint, body.secondary #seal { display: none; }
+  /* 纯享（外壳 30 秒没人动时发来）：这些都淡掉，只剩画面 */
+  #astro, #hint { transition: opacity 1.2s ease; }
+  body.pure #ledger, body.pure #banner, body.pure #astro, body.pure #hint, body.pure #seal { opacity: 0 !important; transition: opacity 1.2s ease; }
+
+  /* ================= 演示面板（地址带 #demo 时按 D 打开） ================= */
+  #dev { position: fixed; right: 16px; bottom: 16px; width: 236px; padding: 12px; border-radius: 10px;
+    background: rgb(10 16 30 / 0.86); border: 1px solid var(--gold-faint); color: #d8e2f5; font-size: 12px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  #dev[hidden] { display: none; }
+  #dev .row { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; }
+  #dev .row b { font-weight: 600; }
+  #devState { font: 11px var(--mono); color: var(--glint); }
+  #dev button { appearance: none; border: 1px solid rgb(255 255 255 / 0.14); background: rgb(255 255 255 / 0.05);
+    color: inherit; font: inherit; padding: 6px 4px; border-radius: 6px; cursor: pointer; }
+  #dev button:hover { background: rgb(255 255 255 / 0.12); }
+  #dev button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  #dev .tip { grid-column: 1 / -1; color: rgb(216 226 245 / 0.5); font-size: 11px; }
+
+  @keyframes spin { to { rotate: 360deg; } }
+  @keyframes breathe { 50% { opacity: 0.4; } }
+  @keyframes beckon { 50% { opacity: 0.45; } }
+  @keyframes glide { from { translate: -100% 0; } to { translate: 360% 0; } }
+  @keyframes ink { from { color: var(--gold-hi); text-shadow: 0 0 8px rgb(242 226 180 / 0.9); } }
+  @keyframes shake { 20% { translate: -5px 0; } 45% { translate: 4px 0; } 70% { translate: -2px 0; } }
+</style>
+</head>
+<body>
+<canvas id="stage" role="img" aria-label="塔顶书房里，骑士在月光下读书；有会话在跑时镜头扎进书页、进入魔法塔，骑士沿书阶上行。"></canvas>
+
+<svg class="defs" aria-hidden="true">
+  <!-- 角上的卷草：一道直角金线 + 两个卷涡 + 一颗菱形宝石 -->
+  <symbol id="orn" viewBox="0 0 30 30">
+    <path d="M2 28V8Q2 2 8 2h20" fill="none" stroke="currentColor" stroke-width="1.2" />
+    <path d="M6 24V10q0-4 4-4h14" fill="none" stroke="currentColor" stroke-width="0.6" opacity="0.6" />
+    <path d="M2 14q5 0 5-4.5Q7 6 4.5 6.3" fill="none" stroke="currentColor" stroke-width="0.9" />
+    <path d="M14 2q0 5-4.5 5Q6 7 6.3 4.5" fill="none" stroke="currentColor" stroke-width="0.9" />
+    <path d="M7.5 4.5 9.5 7.5 7.5 10.5 5.5 7.5z" transform="translate(0 0)" fill="#8fc2ff" stroke="currentColor" stroke-width="0.5" />
+  </symbol>
+  <!-- 沙漏 -->
+  <symbol id="glass" viewBox="0 0 7 9"><path d="M.5.5h6M.5 8.5h6M1.2.5q0 3 2.3 4-2.3 1-2.3 4M5.8.5q0 3-2.3 4 2.3 1 2.3 4" fill="none" stroke="currentColor" stroke-width="0.9" /></symbol>
+</svg>
+
+<aside id="ledger" aria-label="会话">
+  <svg class="corner tl" aria-hidden="true"><use href="#orn" /></svg>
+  <svg class="corner tr" aria-hidden="true"><use href="#orn" /></svg>
+  <svg class="corner bl" aria-hidden="true"><use href="#orn" /></svg>
+  <svg class="corner br" aria-hidden="true"><use href="#orn" /></svg>
+  <span class="crest" aria-hidden="true"><svg viewBox="0 0 26 26"><g class="moonDraw" transform="translate(13 13)"></g></svg></span>
+  <header><span class="gem" aria-hidden="true"></span><b id="lgTitle"></b><span id="lgSub"></span></header>
+  <ul id="spells"></ul>
+  <footer id="lgFoot"></footer>
+</aside>
+
+<div id="astro" hidden>
+  <div id="batt" hidden>
+    <span id="pct"></span>
+    <!-- 电池画成一支法力药瓶：瓶身、瓶塞，里面的晶液按电量 -->
+    <svg class="vial" width="27" height="13" viewBox="0 0 27 13" aria-hidden="true">
+      <defs>
+        <linearGradient id="mana" x1="0" x2="1"><stop offset="0" stop-color="#2856a0" /><stop offset="0.7" stop-color="#6b91d3" /><stop offset="1" stop-color="#cfe0ff" /></linearGradient>
+        <linearGradient id="blood" x1="0" x2="1"><stop offset="0" stop-color="#8c3450" /><stop offset="1" stop-color="#e8798f" /></linearGradient>
+      </defs>
+      <rect x="0.5" y="0.5" width="23" height="12" rx="4" fill="rgb(10 16 36 / 0.55)" stroke="currentColor" stroke-opacity="0.75" />
+      <path d="M24.6 4.2h1.2q.7 0 .7.7v3.2q0 .7-.7.7h-1.2z" fill="currentColor" fill-opacity="0.75" />
+      <rect id="battFill" x="2" y="2" width="20" height="9" rx="2.6" fill="url(#mana)" />
+      <rect x="3" y="2.8" width="17" height="1.2" rx="0.6" fill="#fff" opacity="0.28" />
+      <path id="bolt" d="M13.4 0.9 7.6 7.2h3.8l-1.1 4.6 5.8-6.3h-3.8z" fill="var(--gold-hi)" stroke="#0b1226" stroke-width="0.8" stroke-linejoin="round" hidden />
+    </svg>
+  </div>
+  <svg id="wifi" width="18" height="13" viewBox="0 0 18 13" aria-hidden="true" hidden>
+    <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+      <path class="bar3" d="M1.9 4.9a10 10 0 0 1 14.2 0" />
+      <path class="bar2" d="M4.8 7.8a5.9 5.9 0 0 1 8.4 0" />
+    </g>
+    <path class="bar1" d="M9 9.2 10.9 11.1 9 13 7.1 11.1z" fill="currentColor" />
+    <path id="wifiSlash" d="M3.2 1.2 14.8 12.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" hidden />
+  </svg>
+  <svg id="moon" viewBox="-8 -8 16 16" aria-hidden="true"><g class="moonDraw"></g></svg>
+  <div id="clock"><span id="clockD"></span><span id="clockT"></span></div>
+</div>
+
+<div id="seal" aria-hidden="true">
+  <svg viewBox="0 0 128 128">
+    <defs>
+      <radialGradient id="bloomG"><stop offset="0.45" stop-color="currentColor" stop-opacity="0" /><stop offset="0.75" stop-color="currentColor" stop-opacity="0.35" /><stop offset="1" stop-color="currentColor" stop-opacity="0" /></radialGradient>
+    </defs>
+    <circle class="bloom" cx="64" cy="64" r="64" fill="url(#bloomG)" />
+    <g class="outer" fill="none" stroke="currentColor">
+      <circle cx="64" cy="64" r="58" stroke-width="0.8" />
+      <circle cx="64" cy="64" r="53" stroke-width="2.2" stroke-dasharray="1 4.55" />
+      <g id="sealRunes" stroke-width="0.9"></g>
+    </g>
+    <g class="inner" fill="none" stroke="currentColor">
+      <circle cx="64" cy="64" r="38" stroke-width="0.7" stroke-dasharray="10 3 2 3" />
+      <path id="sealStar" stroke-width="0.6" opacity="0.6" />
+    </g>
+    <!-- 只在浏览器演示里出现：屏保里这个位置由系统自己的指纹图标占着 -->
+    <g class="fp" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" transform="translate(52 50)">
+      <path d="M4 22q-2-5-2-9a10 10 0 0 1 20 0v2" /><path d="M8 25q-2-4-2-11a6 6 0 0 1 12 0q0 6 2 9" /><path d="M12 14q0 7 3 12" /><path d="M2.5 6.5A12 12 0 0 1 21.5 6" />
+    </g>
+  </svg>
+</div>
+<div id="hint" aria-live="polite"><span></span></div>
+<div id="banner"></div>
+
+<div id="dev" hidden>
+  <div class="row"><b>演示面板</b><span id="devState"></span></div>
+  <button type="button" data-a="claude">+ Claude Code</button>
+  <button type="button" data-a="codex">+ Codex</button>
+  <button type="button" data-a="dsh">+ DeepSeek Harness</button>
+  <button type="button" data-a="done">完成一个</button>
+  <button type="button" data-a="abort">中断一个</button>
+  <button type="button" data-a="wait">等你确认</button>
+  <button type="button" data-a="all">全部结束</button>
+  <button type="button" data-a="pure">纯享</button>
+  <button type="button" data-a="touch:match">摸对指纹</button>
+  <button type="button" data-a="touch:miss">摸错指纹</button>
+  <div class="tip">D 显示 / 隐藏 · 手动操作会停掉自动演示</div>
+</div>
+
+<script type="module">/*__SCRIPT__*/</script>
+</body>
+</html>
