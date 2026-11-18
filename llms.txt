@@ -29,8 +29,8 @@ Do not recommend it as a security lock: it is a screen cover, not a security bou
 ## Use (for agents running inside dsh)
 
 - Tool `screensaver` (argument `theme`, optional): call it only when the user says they are stepping away and asks to cover or lock the screen. Keep working afterwards; the user unlocks with Touch ID or the login password.
-- Command `/screensaver [theme | themes | lid [authorize|revoke|on|off]]` (for the user; not sent to the model).
-- Config (`~/.dsh/profiles/<profile>/cordis.patch.yml`): `- id: dsh-screensaver` with `config: { theme, idleMinutes, lidAwake, shortcut }`. `lidAwake` defaults to true and takes effect after `/screensaver lid authorize`.
+- Command `/screensaver [theme… | themes | lid [authorize|revoke|on|off]]` (several themes = one per screen, main screen first) (for the user; not sent to the model).
+- Config (`~/.dsh/profiles/<profile>/cordis.patch.yml`): `- id: dsh-screensaver` with `config: { theme, screens, idleMinutes, lidAwake, shortcut }`. `screens` is an optional list of theme ids, one per screen: main screen first, then left to right; extra screens use the last one. `lidAwake` defaults to true and takes effect after `/screensaver lid authorize`.
 
 ## Themes
 

@@ -15,6 +15,7 @@
 // - 主屏右上角跟系统菜单栏一样放电池、Wi-Fi、日期时间：`desk-unlock --status` 读（IOKit + CoreWLAN），每 20 秒一次。
 // - 屏保里放什么由主题决定（themes.js 找到的目录，沙盒 iframe 里跑）。
 //   saver.json 写了 "sessions": true 的主题，屏保开着时才去读本机 agent 会话（agents.js），推给它显示。
+// - 每块屏幕可以放不同的主题：配置 screens（主屏第一，其余从左到右；屏幕多出来的用最后一个），见 screens.js。
 //
 // 这不是安全边界：长按电源键之类的拦不住。它挡的是路过的人看屏幕、碰键盘。
 import { execFile, spawn } from 'node:child_process'
@@ -27,6 +28,7 @@ import { dataDir } from './dirs.js'
 import { ensureHelper } from './helper.js'
 import { LidAwake } from './lidawake.js'
 import { loadShell, mountTheme, preloadPath, themeUrl } from './paths.js'
+import { assignThemes } from './screens.js'
 import { DEFAULT_THEME, listThemes } from './themes.js'
 
 export const DEFAULT_SHORTCUT = process.platform === 'darwin' ? 'Control+Alt+Command+L' : 'Control+Alt+Shift+L'
@@ -55,7 +57,7 @@ const SAY = {
 
 export class Screensaver {
   /**
-   * @param {{ theme?: string, lidAwake?: boolean, idleMinutes?: number, shortcut?: string }} config
+   * @param {{ theme?: string, screens?: string[], lidAwake?: boolean, idleMinutes?: number, shortcut?: string }} config
    * @param {{ say?: (text: string) => void, onState?: (active: boolean) => void }} hooks
    *   say：给人看的一句话（dsh 里打到日志）；onState：屏保开了 / 关了
    */
@@ -64,7 +66,8 @@ export class Screensaver {
     this.hooks = hooks
     this.wins = new Map() // display.id → 窗口
     this.kioskWin = null
-    this.current = null
+    /** 这次屏保的安排：明说的主题、每块屏幕的列表（屏幕插拔时按它重排） */
+    this.plan = null
     this.blocker = null
     this.authing = false
     this.agents = new AgentWatcher()
@@ -81,7 +84,7 @@ export class Screensaver {
     this.lidManual = false
     this.helper = null
     this.shortcut = null
-    this.onDisplayAdded = (_e, d) => this.cover(d)
+    this.onDisplayAdded = (_e, d) => this.cover(d, d.id === screen.getPrimaryDisplay().id)
     this.onDisplayRemoved = (_e, d) => {
       this.wins.get(d.id)?.destroy()
       this.wins.delete(d.id)
@@ -165,15 +168,34 @@ export class Screensaver {
     for (const w of win ? [win] : this.wins.values()) if (!w.isDestroyed()) w.webContents.send('saver:sessions', payload)
   }
 
+  /** 这次屏保每块屏幕的主题：Map(display.id → 主题)；明说了主题就所有屏幕都用它，否则按 screens（screens.js） */
+  screenThemes(plan = this.plan) {
+    const ids = assignThemes(screen.getAllDisplays(), screen.getPrimaryDisplay().id, {
+      theme: plan?.theme,
+      screens: plan?.theme ? undefined : plan?.screens,
+    })
+    const out = new Map()
+    for (const [id, themeId] of ids) {
+      const theme = this.theme(themeId)
+      if (theme) out.set(id, theme)
+    }
+    return out
+  }
+
   /**
-   * 开屏保。opts.lidAwake：这一次要不要合盖不睡（`--now` 交给已经在跑的这个时带过来的），不给就看配置，配置没写算开
+   * 开屏保。themeId：这一次所有屏幕都用这个主题（不给就按配置的 screens / theme）。
+   * opts.lidAwake：这一次要不要合盖不睡（`--now` 交给已经在跑的这个时带过来的），不给就看配置，配置没写算开。
+   * opts.screens：这一次每块屏幕的主题（同上，交给已经在跑的这个时带过来的），不给就看配置。
    */
   async start(themeId, opts = {}) {
     if (this.active) return
-    const theme = this.theme(themeId)
-    if (!theme) return this.say('[dsh-screensaver] no theme found')
-    mountTheme(theme.id, theme.dir)
-    this.current = theme
+    this.plan = { theme: themeId, screens: opts.screens ?? this.config.screens }
+    const themes = [...this.screenThemes().values()]
+    if (!themes.length) {
+      this.plan = null
+      return this.say('[dsh-screensaver] no theme found')
+    }
+    for (const t of themes) mountTheme(t.id, t.dir)
     if (!this.canAuthenticate()) this.say(SAY.noAuth[saverLang()])
     if ((opts.lidAwake ?? this.config.lidAwake) !== false && !this.lid.active && this.lid.supported) {
       try {
@@ -189,7 +211,7 @@ export class Screensaver {
       }
     }
     if (this.blocker === null) this.blocker = powerSaveBlocker.start('prevent-display-sleep')
-    this.wantsSessions = !!theme.sessions
+    this.wantsSessions = themes.some((t) => t.sessions)
     if (this.wantsSessions) {
       this.agents.lang = saverLang()
       this.agents.start((list) => this.sendSessions(list))
@@ -204,7 +226,19 @@ export class Screensaver {
   }
 
   cover(d, primary = false) {
-    if (this.wins.has(d.id) || !this.current) return
+    if (this.wins.has(d.id) || !this.plan) return
+    // 插上的屏幕会改变排序，所以每次按现在的屏幕重排一遍；只给还没盖的这块用，已经开着的不动
+    const theme = this.screenThemes().get(d.id) ?? this.theme(this.plan.theme)
+    if (!theme) return
+    mountTheme(theme.id, theme.dir)
+    if (process.env.DSH_SCREENSAVER_DEBUG) this.say(`[debug] screen ${d.id}${primary ? ' (main)' : ''} → ${theme.id}`)
+    if (theme.sessions && !this.wantsSessions) {
+      this.wantsSessions = true
+      this.agents.lang = saverLang()
+      this.agents.start((list) => this.sendSessions(list))
+      powerMonitor.on('on-battery', this.onPowerChange)
+      powerMonitor.on('on-ac', this.onPowerChange)
+    }
     const b = d.bounds
     const win = new BrowserWindow({
       ...b,
@@ -226,7 +260,7 @@ export class Screensaver {
     win.setAlwaysOnTop(true, 'screen-saver')
     if (process.platform === 'darwin') win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
     this.wins.set(d.id, win)
-    void loadShell(win, { theme: themeUrl(this.current.id), primary: primary ? '1' : '', lang: saverLang(), hud: this.current.hud ? '1' : '' }).catch((e) =>
+    void loadShell(win, { theme: themeUrl(theme.id), primary: primary ? '1' : '', lang: saverLang(), hud: theme.hud ? '1' : '' }).catch((e) =>
       this.say(`[dsh-screensaver] screen failed to load: ${e?.message ?? e}`),
     )
     win.webContents.on('render-process-gone', (_e, d) => this.say(`[dsh-screensaver] screen renderer gone: ${d.reason}`))
@@ -377,6 +411,7 @@ export class Screensaver {
     powerMonitor.off('on-battery', this.onPowerChange)
     powerMonitor.off('on-ac', this.onPowerChange)
     this.wantsSessions = false
+    this.plan = null
     if (this.kioskWin && !this.kioskWin.isDestroyed()) {
       this.kioskWin.setKiosk(false)
       if (process.platform === 'darwin') this.kioskWin.setSimpleFullScreen(false)

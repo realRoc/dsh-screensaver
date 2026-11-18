@@ -89,6 +89,7 @@ is used instead.
 | --- | --- |
 | `/screensaver` | Start with the default theme |
 | `/screensaver <theme>` | Start with a theme, e.g. `/screensaver subspace` |
+| `/screensaver <theme> <theme> …` | A theme per screen, main screen first, e.g. `/screensaver magic-tower subspace` |
 | `/screensaver themes` | List installed themes |
 | `/screensaver lid` | Show lid-closed awake status |
 | `/screensaver lid authorize` | Allow lid-closed awake (asks for an admin password once; installs a sudoers rule that only allows `pmset -a disablesleep 0/1`) |
@@ -103,6 +104,7 @@ Add an entry to your profile's `~/.dsh/profiles/<profile>/cordis.patch.yml` (it 
 - id: dsh-screensaver
   config:
     theme: subspace      # default theme id
+    screens: [magic-tower, subspace]   # optional: a theme per screen (see "Several screens" below)
     idleMinutes: 10      # start after 10 idle minutes; 0 = never (default)
     lidAwake: true       # keep the Mac awake with the lid closed while the screen saver is up (default; false turns it off)
     shortcut: Control+Alt+Command+L   # Electron accelerator; '' disables the shortcut
@@ -112,16 +114,25 @@ Standalone, the same fields live in `~/.dsh/plugins-data/dsh-screensaver/config.
 
 | Command | What it does |
 | --- | --- |
-| `dsh-screensaver setup` | Walk through lid-closed awake (authorizes it on the spot), the theme and idle start |
+| `dsh-screensaver setup` | Walk through lid-closed awake (authorizes it on the spot), the theme, a theme per screen and idle start |
 | `dsh-screensaver config` | Show the settings and the file they are saved in |
-| `dsh-screensaver config <key> <value>` | Change one, e.g. `config lidAwake off`, `config idleMinutes 10` |
+| `dsh-screensaver config <key> <value>` | Change one, e.g. `config lidAwake off`, `config idleMinutes 10`, `config screens magic-tower,subspace` |
 | `dsh-screensaver config unset <key>` | Back to the default |
 | `dsh-screensaver lid [status\|authorize\|revoke]` | Lid-closed awake authorization, same as `/screensaver lid` |
 | `dsh-screensaver themes` | List installed themes |
 
 `DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}'` overrides the file for one run. A `--now` handed to a screen saver that is
-already running (for example the one inside dsh) brings its `lidAwake` along for that start when it sets one (in the file or the variable); otherwise the running one
+already running (for example the one inside dsh) brings its `lidAwake` and `screens` along for that start when it sets them (in the file or the variable); otherwise the running one
 uses its own config.
+
+### Several screens
+
+Every screen gets the same theme unless you set `screens`: a list of theme ids, one per screen. The first is the main
+screen (the one with the menu bar), the rest go to the other screens from left to right (top to bottom when two share a
+column), and screens beyond the end of the list use its last entry. `[magic-tower, subspace]` puts Arcane Study on the
+main screen and Subspace Jump on every other one; `[magic-tower, subspace, basic]` gives a third screen the clock. A
+screen plugged in while the screen saver is up gets its theme the same way. Naming one theme for a single start
+(`--now subspace`, `/screensaver subspace`) uses it on every screen that time.
 
 ## Themes
 

@@ -27,6 +27,13 @@ describe('/screensaver', () => {
     await expect(run('nope', b)).rejects.toThrow('No theme "nope"')
   })
 
+  it('好几个主题名：每块屏幕一个（主屏第一），有一个没装就报错', async () => {
+    const b = fakeBridge()
+    await run('subspace basic', b)
+    expect(b.sent).toEqual([['themes', {}], ['start', { screens: ['subspace', 'basic'] }]])
+    await expect(run('subspace rain', b)).rejects.toThrow('No theme "rain"')
+  })
+
   it('themes 列表、lid 子命令、help', async () => {
     const b = fakeBridge()
     expect(await run('themes', b)).toContain('subspace  Subspace Jump  (shows live agent sessions)')
@@ -48,6 +55,7 @@ describe('screensaver 工具', () => {
 describe('杂项', () => {
   it('插件配置只把屏保认的那几项传过去', () => {
     expect(saverConfig({ theme: 'subspace', idleMinutes: 5, desktop: true, shortcut: null })).toEqual({ theme: 'subspace', idleMinutes: 5 })
+    expect(saverConfig({ screens: ['magic-tower', 'subspace'] })).toEqual({ screens: ['magic-tower', 'subspace'] })
   })
 
   it('子进程输出按行拼：一行被切成几块也认得出', () => {

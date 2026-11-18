@@ -79,6 +79,7 @@ npx dsh-screensaver setup               # 改配置：合盖不睡（顺手授�
 | --- | --- |
 | `/screensaver` | 用默认主题开启 |
 | `/screensaver <主题>` | 用指定主题开启，例如 `/screensaver subspace` |
+| `/screensaver <主题> <主题> …` | 每块屏幕一个主题，主屏第一，例如 `/screensaver magic-tower subspace` |
 | `/screensaver themes` | 查看已安装的主题 |
 | `/screensaver lid` | 查看合盖不睡的状态 |
 | `/screensaver lid authorize` | 授权合盖不睡：输入一次管理员密码，安装一条只允许 `pmset -a disablesleep 0/1` 的 sudoers 规则 |
@@ -93,6 +94,7 @@ npx dsh-screensaver setup               # 改配置：合盖不睡（顺手授�
 - id: dsh-screensaver
   config:
     theme: subspace      # 默认主题
+    screens: [magic-tower, subspace]   # 可选：每块屏幕不同的主题（见下面「多块屏幕」）
     idleMinutes: 10      # 空闲 10 分钟自动开启；0 表示不自动开启（默认）
     lidAwake: true       # 开启屏保时顺便打开合盖不睡（默认开，写 false 关掉）
     shortcut: Control+Alt+Command+L   # Electron 快捷键写法；填 '' 不注册快捷键
@@ -102,15 +104,22 @@ npx dsh-screensaver setup               # 改配置：合盖不睡（顺手授�
 
 | 命令 | 作用 |
 | --- | --- |
-| `dsh-screensaver setup` | 一问一答：合盖不睡（当场授权）、主题、空闲自动开启 |
+| `dsh-screensaver setup` | 一问一答：合盖不睡（当场授权）、主题、每块屏幕的主题、空闲自动开启 |
 | `dsh-screensaver config` | 查看配置和配置文件位置 |
-| `dsh-screensaver config <项> <值>` | 改一项，例如 `config lidAwake off`、`config idleMinutes 10` |
+| `dsh-screensaver config <项> <值>` | 改一项，例如 `config lidAwake off`、`config idleMinutes 10`、`config screens magic-tower,subspace` |
 | `dsh-screensaver config unset <项>` | 改回默认 |
 | `dsh-screensaver lid [status\|authorize\|revoke]` | 合盖不睡授权，同 `/screensaver lid` |
 | `dsh-screensaver themes` | 查看已安装的主题 |
 
 `DSH_SCREENSAVER_CONFIG='{"theme":"subspace"}'` 只对这一次生效，盖过配置文件。`--now` 交给已经在跑的屏保（比如 dsh 里那个）时，
-如果这次写了 `lidAwake`（配置文件或环境变量里），会一起带过去；没写就按那个屏保自己的配置。
+如果这次写了 `lidAwake`、`screens`（配置文件或环境变量里），会一起带过去；没写就按那个屏保自己的配置。
+
+### 多块屏幕
+
+不写 `screens` 时所有屏幕用同一个主题。`screens` 是一串主题 id，一块屏幕一个：第一个给主屏（有菜单栏的那块），
+其余按从左到右给别的屏幕（左右一样再从上到下），屏幕比列表多时，多出来的用最后一个。
+`[magic-tower, subspace]` 就是主屏魔法书斋、其余屏幕亚空间跃迁；`[magic-tower, subspace, basic]` 让第三块屏幕显示时钟。
+屏保开着时新插上的屏幕也按这个规则分。某一次明说了一个主题（`--now subspace`、`/screensaver subspace`），这一次所有屏幕都用它。
 
 ## 主题
 

@@ -8,6 +8,7 @@
 #   - id: dsh-screensaver
 #     config:
 #       theme: subspace
+#       screens: [magic-tower, subspace]   # 每块屏幕不同：主屏魔法书斋，其余屏幕亚空间（不写 = 都用 theme）
 #       idleMinutes: 10
 #       lidAwake: false   # 合盖不睡默认开（授权过才生效），不要就写 false
 - insert:
