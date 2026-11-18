@@ -13,7 +13,7 @@ with `npx`.
 
 ![Subspace Jump theme: Claude Code, Codex and DeepSeek Harness sessions listed during a warp jump](docs/images/subspace.jpg)
 
-| Clock (built in) | Subspace Jump (separate theme package) |
+| Clock (built in) | Subspace Jump (built in) |
 | --- | --- |
 | ![Clock theme: a macOS-style lock screen with date, time, battery, Wi-Fi and "Touch ID or Enter Password"](docs/images/basic-zh.jpg) | A three.js warp tunnel (above): when agents are running it jumps into subspace and lists each session with its own product icon. Inside, it drifts between a nebula storm, a vortex of ocean waves and a tunnel of Gaussian splats. |
 
@@ -51,17 +51,12 @@ dsh plugin --profile web add dsh-screensaver
 Use `desktop` instead of `web` for the desktop app profile, then restart dsh. The first start downloads the Electron
 runtime (about 100 MB, once) and compiles the Touch ID helper if the Xcode Command Line Tools are installed.
 
-Themes are separate packages. Install only the ones you want:
-
-```bash
-dsh plugin --profile web add dsh-screensaver-theme-subspace
-```
+Both themes, Clock and Subspace Jump, ship inside this package; there is nothing else to install.
 
 Want the latest unreleased code from GitHub instead of the npm release:
 
 ```bash
 dsh plugin --profile web add github:realRoc/dsh-screensaver
-dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspace"
 ```
 
 ### Without dsh
@@ -69,7 +64,7 @@ dsh plugin --profile web add "github:realRoc/dsh-screensaver#path:/themes/subspa
 ```bash
 npx dsh-screensaver --now               # cover the screen now, exit after you unlock
 npx dsh-screensaver                     # stay in the background, press ⌃⌥⌘L to start
-npx dsh-screensaver --now subspace      # with a theme (when it is installed or in DSH_SCREENSAVER_THEMES)
+npx dsh-screensaver --now subspace      # with a theme
 npx dsh-screensaver setup               # settings: lid-closed awake (and its one-time authorization), theme, idle start
 ```
 
@@ -125,10 +120,10 @@ uses its own config.
 
 ## Themes
 
-| Theme | id | Install | Shows agent sessions |
+| Theme | id | Ships with | Shows agent sessions |
 | --- | --- | --- | --- |
 | Clock | `basic` | built in | No |
-| Subspace Jump | `subspace` | `dsh-screensaver-theme-subspace` | Yes |
+| Subspace Jump | `subspace` | built in | Yes |
 
 More themes are coming. Themes are visual works licensed CC BY-NC-SA 4.0 (no commercial use). A theme is a folder with an `index.html` (runs in a sandboxed iframe, draws only) and a
 `saver.json`. Put your own in `~/.dsh/plugins-data/dsh-screensaver/themes/<id>/`, or publish it as an npm package with
@@ -199,10 +194,10 @@ DSH_SCREENSAVER_DEBUG=1 npm run now   # log page console messages
 
 ### Release
 
-Pushing a `v*` tag runs [`.github/workflows/publish.yml`](.github/workflows/publish.yml), which tests and publishes both
-packages to npm through Trusted Publishing (no token). A package whose version is already on npm is skipped.
+Pushing a `v*` tag runs [`.github/workflows/publish.yml`](.github/workflows/publish.yml), which tests and publishes
+`dsh-screensaver` (themes included) to npm through Trusted Publishing (no token). A version already on npm is skipped.
 
-1. Bump `version` in `package.json` (and in `themes/subspace/package.json` only if the theme changed).
+1. Bump `version` in `package.json`. Rebuild `themes/subspace/index.html` first if the theme source changed.
 2. Commit and push to `main`.
 3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The tag must match the root `package.json` version.
 

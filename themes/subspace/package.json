@@ -1,57 +1,22 @@
 {
   "name": "dsh-screensaver-theme-subspace",
   "version": "0.2.0",
-  "description": "Subspace Jump theme for dsh-screensaver: a three.js warp-tunnel screen saver that jumps into subspace while your Claude Code, Codex or DeepSeek Harness agents are running and lists each live session.",
+  "private": true,
+  "description": "Source and build script for the Subspace Jump theme. It ships inside the dsh-screensaver package (themes/subspace); this package is not published on its own.",
   "type": "module",
-  "files": [
-    "index.html",
-    "saver.json",
-    "README.md",
-    "LICENSE",
-    "THIRD_PARTY_NOTICES.md",
-    "cordis.patch.yml"
-  ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "demo": "node scripts/build.mjs && open 'index.html#demo'"
-  },
-  "dsh-screensaver": {
-    "theme": "."
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
     "three": "0.169.0"
   },
-  "keywords": [
-    "dsh-screensaver",
-    "dsh-screensaver-theme",
-    "screensaver",
-    "three.js",
-    "warp",
-    "subspace",
-    "ai-agent",
-    "claude-code",
-    "codex",
-    "deepseek-harness"
-  ],
   "license": "CC-BY-NC-SA-4.0",
   "author": "realRoc",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/realRoc/dsh-screensaver.git",
     "directory": "themes/subspace"
-  },
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    }
-  },
-  "exports": {
-    "./package.json": "./package.json",
-    "./cordis.patch.yml": "./cordis.patch.yml"
-  },
-  "publishConfig": {
-    "registry": "https://registry.npmjs.org/",
-    "access": "public"
   }
 }

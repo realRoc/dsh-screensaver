@@ -1,4 +1,4 @@
-# dsh-screensaver-theme-subspace · Subspace Jump
+# Subspace Jump · dsh-screensaver theme
 
 A three.js theme for [dsh-screensaver](https://github.com/realRoc/dsh-screensaver). Three suns orbit in normal space; as soon as one of your
 Claude Code, Codex or DeepSeek Harness sessions starts running, the camera locks onto a portal and jumps into a
@@ -27,11 +27,14 @@ through it into the new style while the palette shifts.
 换画风不是整屏淡入淡出：新画风从隧道前方远处长出来，交界被花纹啃出一圈亮边，镜头飞过交界就到了新画风里。
 本主题是视觉作品，采用 CC BY-NC-SA 4.0，禁止商用。
 
+Ships inside [dsh-screensaver](../../README.md) (0.3.0 and later); nothing else to install:
+
 ```bash
-dsh plugin --profile web add dsh-screensaver-theme-subspace
+dsh plugin --profile web add dsh-screensaver
 ```
 
-Then `/screensaver subspace`, or set `theme: subspace` in the dsh-screensaver config.
+Then `/screensaver subspace`, or set `theme: subspace` in the dsh-screensaver config. The separate
+`dsh-screensaver-theme-subspace` npm package (0.2.0) is no longer needed; remove it if you installed it.
 
 - Uses about 30 fps and a lower resolution on battery and on secondary displays.
 - After 30 s without input (pure mode) the session list, banners and targeting box fade out.

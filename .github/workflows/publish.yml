@@ -1,11 +1,10 @@
-# Publish dsh-screensaver and dsh-screensaver-theme-subspace to npm when a v* tag is pushed.
+# Publish dsh-screensaver to npm when a v* tag is pushed. Themes under themes/ ship inside it.
 #
-# Uses npm Trusted Publishing (OIDC): no NPM_TOKEN secret. Each package must list this workflow
+# Uses npm Trusted Publishing (OIDC): no NPM_TOKEN secret. The package must list this workflow
 # (owner realRoc, repository dsh-screensaver, workflow publish.yml) under
 # Settings -> Trusted Publisher on npmjs.com. Provenance is attached automatically.
 #
-# A package whose current version is already on npm is skipped, so the theme only gets
-# published when its version was bumped.
+# A version that is already on npm is skipped.
 name: Publish to npm
 
 on:
@@ -59,7 +58,7 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Publish packages
+      - name: Publish package
         run: |
           set -euo pipefail
 
@@ -90,4 +89,3 @@ jobs:
           }
 
           publish .
-          publish themes/subspace
