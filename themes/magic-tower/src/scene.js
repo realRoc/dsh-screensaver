@@ -2590,7 +2590,10 @@ heroBook.visible = false;
 scene.add(heroBook);
 const towerPages = makePageBurst(scene, new THREE.MeshStandardMaterial({ map: pixelTex(makePageCanvas()), color: 0xe8dcc4, side: THREE.DoubleSide, roughness: 0.9, emissive: 0xffe0a8, emissiveIntensity: 0.25 }), 90);
 let heroBurstDone = false;
-const heroLight = new THREE.PointLight(0xffe0b0, 0, 0, 2); heroBook.add(heroLight); heroLight.position.set(0.16, 0, 0.3);
+// 书页的光不挂在书上：书藏起来时灯也跟着不算数，塔里灯数一变，所有材质都要重编着色器（离开那一下会卡 0.4 秒）。
+// 灯一直在场景里，不用时亮度 0，位置每帧跟着书走。
+const heroLight = new THREE.PointLight(0xffe0b0, 0, 0, 2); scene.add(heroLight);
+const HERO_LIGHT_AT = new THREE.Vector3(0.16, 0, 0.3);
 
 /* ---------------- 状态机：idle（书房）→ enter → run（塔）→ leave → idle ---------------- */
 let mode = 'idle', modeT = 0, wall = 0, queued = null;
@@ -2632,8 +2635,10 @@ function placeHeroBook(e) {
   const open = ss(e, 1.15, 1.6);
   heroFront.rotation.y = -open * 2.5;
   heroPages.emissiveIntensity = 0.15 + open * 1.1;
-  heroLight.intensity = open * 1.5;
   heroBook.visible = e < 2.6;
+  heroBook.updateMatrixWorld();
+  heroLight.position.copy(HERO_LIGHT_AT).applyMatrix4(heroBook.matrixWorld);
+  heroLight.intensity = heroBook.visible ? open * 1.5 : 0;
 }
 
 function frame(dt, draw = true) {
@@ -2679,7 +2684,7 @@ function frame(dt, draw = true) {
     if (mode === 'leave') {
       placeHeroBook(e);
       if (e > 1.4 && !heroBurstDone) { heroBurstDone = true; towerPages.fire(time, heroBook.position.clone(), camera.getWorldDirection(new THREE.Vector3()).negate()); }
-    } else { heroBook.visible = false; heroBurstDone = false; }
+    } else { heroBook.visible = false; heroLight.intensity = 0; heroBurstDone = false; }
     towerPages.update(time);
     renderer.toneMappingExposure = 1.25;
     if (draw) composer.render();
@@ -2715,7 +2720,38 @@ function frame(dt, draw = true) {
     renderer.autoClear = true;
   }
 }
-let quality = { pr: Math.min(devicePixelRatio, 1.25), frameMs: 1000 / 61 }, lastT = -1e9;
+/* ---------------- 预热：进塔那一下不卡 ----------------
+ * 塔里的场景、书房里一开始藏着的东西（翻飞的书页、符文）、转场光爆，着色器都是第一次画到时才编译，
+ * 进塔第 1.2 秒塔第一次露面会整个卡住 2 秒多。开屏画出第一帧后，趁书房还停着，在后台把它们编好
+ * （有 KHR_parallel_shader_compile 就不占画面），编好后再把塔往离屏缓冲里画一帧，贴图也先传上去。 */
+let warm = 'no';
+function warmUp() {
+  warm = 'compiling';
+  const was = renderer.getRenderTarget();
+  // 塔和书房都画进合成用的缓冲（不做色调映射），光爆直接画到屏幕：着色器版本跟着画到哪儿走，编的时候要对上
+  renderer.setRenderTarget(rt);
+  const jobs = [renderer.compileAsync(scene, camera), renderer.compileAsync(study.scene, study.camera)];
+  renderer.setRenderTarget(null);
+  jobs.push(renderer.compileAsync(overlayScene, compCam));
+  renderer.setRenderTarget(was);
+  Promise.all(jobs).then(() => { warm = 'render'; }, () => { warm = 'done'; });
+}
+function warmRender() {
+  warm = 'done';
+  // 藏着的东西（离开时那本书、翻飞的书页）画不到：贴图直接传上去
+  for (const sc of [scene, study.scene]) sc.traverse((o) => {
+    for (const m of [o.material].flat()) {
+      if (!m) continue;
+      for (const v of Object.values(m)) if (v?.isTexture && !v.isRenderTargetTexture) renderer.initTexture(v);
+      if (m.uniforms) for (const u of Object.values(m.uniforms)) if (u?.value?.isTexture && !u.value.isRenderTargetTexture) renderer.initTexture(u.value);
+    }
+  });
+  if (mode !== 'idle') return;                          // 已经在进塔了：塔自己会画
+  renderer.toneMappingExposure = 1.25;
+  composer.render();                                    // 画进离屏缓冲，不上屏
+}
+
+let quality = { pr: Math.min(devicePixelRatio, 1.25), frameMs: 1000 / 61 }, lastT = -1e9, frames = 0;
 const frameHooks = [];
 function loop(t) {
   if (t - lastT < quality.frameMs - 2) return;
@@ -2723,6 +2759,8 @@ function loop(t) {
   const dt = Math.min(clock.getDelta(), 0.05);
   frame(dt);
   for (const f of frameHooks) f(dt);
+  if (++frames === 2 && warm === 'no') warmUp();
+  else if (warm === 'render') warmRender();
 }
 function renderFrame() { frame(0); }
 
