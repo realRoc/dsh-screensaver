@@ -2,7 +2,8 @@
 //
 // 1. dsh 插件的子进程（lib/index.js 起的，DSH_SCREENSAVER_CONTROL=stdin）：
 //    stdin 一行一条 JSON 指令，stdout 回 JSON（都带 "$" 字段，别的输出当日志），stdin 断了（dsh 退出）就收尾退出。
-//      → { "$": "start", "theme": "subspace" }           开屏保（theme 可省）
+//      → { "$": "start", "theme": "subspace" }           开屏保（theme 可省；给了就所有屏幕都用它）
+//      → { "$": "start", "screens": ["magic-tower", "subspace"] }   这一次每块屏幕的主题（主屏第一，见 screens.js）
 //      → { "$": "config", "config": { ... } }            改配置
 //      → { "$": "themes", "id": 1 }                      列主题        ← { "$": "reply", "id": 1, "result": [...] }
 //      → { "$": "lid", "action": "status|authorize|revoke|on|off", "id": 2 }
@@ -28,8 +29,8 @@ function readConfig() {
 }
 
 // 同一时间只开一个：第二次 `dsh-screensaver --now` 交给已经在跑的那个去开，
-// 连同这次明说了的合盖不睡设置（比如桌宠开的、dsh 里配的是关，这一次也按桌宠的来）；没说就按那个实例自己的配置
-if (!app.requestSingleInstanceLock({ now, theme: nowTheme, lidAwake: readConfig().lidAwake })) app.exit(0)
+// 连同这次明说了的合盖不睡、每块屏幕的主题（比如桌宠开的、dsh 里配的是关，这一次也按桌宠的来）；没说就按那个实例自己的配置
+if (!app.requestSingleInstanceLock({ now, theme: nowTheme, lidAwake: readConfig().lidAwake, screens: readConfig().screens })) app.exit(0)
 registerScheme()
 app.dock?.hide() // 不进程序坞，不抢 Cmd+Tab
 
@@ -50,7 +51,7 @@ async function handle(msg) {
   try {
     switch (msg.$) {
       case 'start':
-        await saver.start(msg.theme)
+        await saver.start(msg.theme, Array.isArray(msg.screens) ? { screens: msg.screens } : {})
         return reply(true)
       case 'config':
         saver.applyConfig(msg.config ?? {})
@@ -109,7 +110,7 @@ async function main() {
     },
   })
   app.on('second-instance', (_e, _argv, _cwd, data) => {
-    if (data?.now) void saver.start(data.theme, { lidAwake: data.lidAwake })
+    if (data?.now) void saver.start(data.theme, { lidAwake: data.lidAwake, screens: Array.isArray(data.screens) ? data.screens : undefined })
   })
   app.on('window-all-closed', () => {}) // 屏保关了程序不退：等下一次快捷键 / 指令
   app.on('before-quit', (e) => {

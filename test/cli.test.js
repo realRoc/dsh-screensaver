@@ -125,9 +125,36 @@ describe('dsh-screensaver 子命令', () => {
 
   it('setup：关掉合盖不睡、选第 2 个主题、空闲 10 分钟', async () => {
     const lid = fakeLid()
-    const d = deps(['n', '2', '10'], lid)
+    const d = deps(['n', '2', '', '10'], lid)
     expect(await runCli(['setup'], d)).toBe(0)
     expect(lid.calls).toEqual([])
     expect(readSettings(PATH)).toEqual({ lidAwake: false, theme: 'subspace', idleMinutes: 10 })
+  })
+
+  it('setup：每块屏幕不同（编号、id 混着写），same 改回所有屏幕一样，写错了不改', async () => {
+    let d = deps(['n', '', '2,basic', ''])
+    expect(await runCli(['setup'], d)).toBe(0)
+    expect(readSettings(PATH).screens).toEqual(['subspace', 'basic'])
+    d = deps(['n', '', 'rain, 1', ''])
+    await runCli(['setup'], d)
+    expect(readSettings(PATH).screens).toEqual(['subspace', 'basic'])
+    expect(d.lines.join('\n')).toMatch(/not installed themes/)
+    d = deps(['n', '', 'same', ''])
+    await runCli(['setup'], d)
+    expect(readSettings(PATH).screens).toEqual([])
+  })
+
+  it('config screens：逗号 / 空格分开，查主题装没装，空的 = 所有屏幕一样', async () => {
+    let d = deps()
+    expect(await runCli(['config', 'screens', 'subspace, basic'], d)).toBe(0)
+    expect(d.lines).toEqual(['screens = subspace, basic'])
+    expect(readSettings(PATH).screens).toEqual(['subspace', 'basic'])
+    d = deps()
+    expect(await runCli(['config', 'screens', 'subspace rain'], d)).toBe(1)
+    expect(d.errors[0]).toMatch('No theme "rain"')
+    d = deps()
+    expect(await runCli(['config', 'screens', ''], d)).toBe(0)
+    expect(d.lines).toEqual(['screens = (same theme on every screen)'])
+    expect(parseValue('screens', ['a', ' b ', ''])).toEqual(['a', 'b'])
   })
 })
