@@ -17,4 +17,5 @@ is not affiliated with or endorsed by these companies.
 ## Original work
 
 The knight, the study, the tower, the shaders and the interface are original work for this theme. The knight sprite
-sheets (`assets/knight_*`) are rendered from an original Blender model through an HD-2D pixel pipeline.
+sheets (`assets/knight_*`) are rendered from an original Blender model through an HD-2D pixel pipeline, and the desk
+corner (`assets/desk_corner.glb`: writing desk, armchair, inkwell, quill, books, scrolls) is an original Blender model.
