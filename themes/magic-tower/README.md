@@ -32,7 +32,7 @@ dsh-screensaver the shell keeps drawing its own and the theme only shows the sce
 今晚真实的月相和日期时间，中间下方是套在系统指纹图标外面的法阵：认出来亮金色，没认出来变红并提示「指印未合，再触一次」；底部提示是「月下入阁 · 使用触控 ID 或输入密码」，验证时「星辉渐明…」。
 位置和外壳、亚空间主题一样。本主题是视觉作品，采用 CC BY-NC-SA 4.0，禁止商用。
 
-Ships inside [dsh-screensaver](../../README.md); nothing else to install:
+Ships inside [dsh-screensaver](../../README.md) (0.4.0 and later); nothing else to install:
 
 ```bash
 dsh plugin --profile web add dsh-screensaver
