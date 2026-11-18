@@ -1,4 +1,5 @@
 {
+  "version": 1794985312,
   "dirs": 8,
   "frames": 8,
   "anims": {
@@ -11,14 +12,62 @@
     "sit": {
       "feetV": 0.1486,
       "elevDeg": 22.0,
-      "cell": 160,
-      "worldSize": 1.9
+      "cell": 288,
+      "worldSize": 1.9,
+      "frames": 20,
+      "target": 0.72,
+      "rows": [
+        {
+          "yaw": 109,
+          "elev": 16,
+          "target": 0.6945
+        },
+        {
+          "yaw": 90,
+          "elev": 24,
+          "target": 0.7307
+        },
+        {
+          "yaw": 68,
+          "elev": 32,
+          "target": 0.7872
+        },
+        {
+          "yaw": 46,
+          "elev": 40,
+          "target": 0.8715
+        }
+      ]
     }
   },
   "sitHands": {
     "forward": 0.6,
     "spread": 0.15,
     "height": 0.87
+  },
+  "sitTurn": {
+    "firstFrame": 8,
+    "radius": 0.27,
+    "frameSec": 0.11,
+    "phi": [
+      null,
+      0.0,
+      0.06,
+      0.16,
+      0.29,
+      0.43,
+      0.58,
+      0.72,
+      0.85,
+      0.95,
+      1.0,
+      1.0
+    ]
+  },
+  "depth": {
+    "near": 8.0,
+    "range": 4.0,
+    "camDist": 10.0
   },
   "directions": "row d faces yaw = d*45deg counter-clockwise (from above) starting at 'facing the camera'; d=4 shows the back",
   "ramps": [

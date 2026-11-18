@@ -6,6 +6,12 @@ Codex or DeepSeek Harness sessions starts running, the camera dives into the ope
 knight climbs the spiral book stairs of the tower. When everything has finished (after a 15 s grace period) a book flies
 up to the camera, opens, and you are back in the study.
 
+Every few seconds he turns a page with his right hand: he pinches the corner, carries the page over the spine and
+presses it flat, and the 3D page follows his hand frame by frame. The desk, the armchair and the desk props are modelled
+in Blender like the knight and shaded with the same palette ramps, the knight sprite carries per-pixel depth so his
+hands rest on the book and his legs sit under the desk, and the study renders at about 520 lines so the desk and the
+knight share one pixel size.
+
 The interface follows the same layout as the shell and the Subspace Jump theme, drawn in the tower's style:
 
 - **Left, session ledger**: a moonlit glass page with gold corners. Each session has a rune ring around its product

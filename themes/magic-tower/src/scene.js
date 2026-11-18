@@ -14,6 +14,10 @@ import walkIndex from '../assets/knight_walk_index.png';
 import walkNormal from '../assets/knight_walk_normal.png';
 import sitIndex from '../assets/knight_sit_index.png';
 import sitNormal from '../assets/knight_sit_normal.png';
+import sitDepth from '../assets/knight_sit_depth.png';
+import deskGlb from '../assets/desk_corner.glb';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { mergeVertices, mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /* ============================================================
  * 尺寸。静态几何按「一圈」周期排布，镜头每爬一圈整座塔挪一圈 → 无尽的塔。
@@ -1823,7 +1827,7 @@ scene.add(pages); fxObjects.push(pages);
  * 每个像素只存「哪条色阶、第几档」和法线；这里按场景里的真实灯光算明暗，
  * 明暗只决定在色阶里上下挪几档，所以颜色永远落在调色板里。
  * ============================================================ */
-const KN_URL = { walk: [walkIndex, walkNormal], sit: [sitIndex, sitNormal] };
+const KN_URL = { walk: [walkIndex, walkNormal], sit: [sitIndex, sitNormal, sitDepth] };
 const knLoader = new THREE.TextureLoader();
 const loadNearest = (url) => {
   const t = knLoader.load(url);
@@ -1831,7 +1835,11 @@ const loadNearest = (url) => {
   return t;
 };
 const KN_TEX = {};
-for (const a of Object.keys(KN_META.anims)) KN_TEX[a] = { index: loadNearest(KN_URL[a][0]), normal: loadNearest(KN_URL[a][1]) };
+for (const a of Object.keys(KN_META.anims)) {
+  KN_TEX[a] = { index: loadNearest(KN_URL[a][0]), normal: loadNearest(KN_URL[a][1]) };
+  // 坐姿有逐像素深度：手搭在书上、腿在桌下、身子靠着椅背，各自前后关系都对
+  if (KN_URL[a][2]) KN_TEX[a].depth = loadNearest(KN_URL[a][2]);
+}
 const KN_R = KN_META.ramps.length, KN_S = KN_META.steps, KN_SIZE = KN_META.anims.walk.worldSize, KN_CELL = KN_META.anims.walk.cell;
 const knLut = (() => {
   const data = new Uint8Array(KN_R * KN_S * 4);
@@ -1845,13 +1853,18 @@ const knLut = (() => {
 })();
 function makeKnightMesh(anim) {
   const a = KN_META.anims[anim];
+  const nFrames = a.frames ?? KN_META.frames, depthTex = KN_TEX[anim].depth;
   const geo = new THREE.PlaneGeometry(a.worldSize, a.worldSize);
   geo.translate(0, a.worldSize * (0.5 - a.feetV), 0);
   const v3 = () => new THREE.Vector3();
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       tIndex: { value: KN_TEX[anim].index }, tNormal: { value: KN_TEX[anim].normal }, tLUT: { value: knLut },
-      uCell: { value: new THREE.Vector2() }, uGrid: { value: new THREE.Vector2(KN_META.frames, KN_META.dirs) }, uSheetPx: { value: a.cell * KN_META.frames },
+      uCell: { value: new THREE.Vector2() }, uGrid: { value: new THREE.Vector2(nFrames, a.rows?.length ?? KN_META.dirs) }, uSheetPx: { value: a.cell * nFrames },
+      uWorldSize: { value: a.worldSize },
+      tDepth: { value: depthTex ?? null }, uTargetY: { value: a.target ?? 0 },
+      uDepthNear: { value: KN_META.depth?.near ?? 8 }, uDepthRange: { value: KN_META.depth?.range ?? 4 }, uCamDist: { value: KN_META.depth?.camDist ?? 10 },
+      uClampY: { value: -1e3 },   // 桌面高度：身上刚好算到桌面下面一点的像素（手、前臂）沿视线挪回桌面上方
       uAmbient: { value: 0.46 }, uBands: { value: new THREE.Vector3(...KN_META.shading.bands) }, uSteps: { value: KN_S }, uRamps: { value: KN_R },
       uLightPos: { value: [v3(), v3(), v3(), v3()] }, uLightCol: { value: [0, 1, 2, 3].map(() => new THREE.Color()) },
       uLightPow: { value: [0, 0, 0, 0] }, uLightRange: { value: [1, 1, 1, 1] },
@@ -1859,11 +1872,14 @@ function makeKnightMesh(anim) {
       uGlow: { value: 2.2 }, uFogColor: { value: new THREE.Color(FOG_COLOR) }, uFogD: shared.uFogD,
       uDepthPull: { value: 0 },   // 只改深度不改大小：精灵是一张纸，人身体的厚度靠这个补
     },
+    defines: depthTex ? { USE_SPRITE_DEPTH: '' } : {},
     vertexShader: /* glsl */`
       uniform vec2 uCell, uGrid; uniform float uDepthPull;
-      varying vec2 vSheetUv; varying vec3 vWorld; varying float vDepth;
+      varying vec2 vSheetUv; varying vec3 vWorld; varying float vDepth; varying vec3 vOrigin; varying vec2 vCellUv;
       void main(){
         vSheetUv = vec2((uCell.x + uv.x) / uGrid.x, 1.0 - (uCell.y + 1.0 - uv.y) / uGrid.y);
+        vCellUv = uv;
+        vOrigin = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz;
         vec4 mv = viewMatrix * w; vDepth = -mv.z;
         vec4 p0 = projectionMatrix * mv;
@@ -1875,11 +1891,32 @@ function makeKnightMesh(anim) {
       uniform float uSheetPx, uAmbient, uSteps, uRamps, uGlow, uFogD;
       uniform vec3 uBands, uRight, uUpV, uFwdV, uFogColor;
       uniform vec3 uLightPos[4]; uniform vec3 uLightCol[4]; uniform float uLightPow[4]; uniform float uLightRange[4];
-      varying vec2 vSheetUv; varying vec3 vWorld; varying float vDepth;
+      varying vec2 vSheetUv; varying vec3 vWorld; varying float vDepth; varying vec3 vOrigin; varying vec2 vCellUv;
       vec4 lut(float r, float st){ return texture2D(tLUT, vec2((st + 0.5) / uSteps, (r + 0.5) / uRamps)); }
+      #ifdef USE_SPRITE_DEPTH
+      uniform sampler2D tDepth; uniform mat4 projectionMatrix;
+      uniform float uTargetY, uDepthNear, uDepthRange, uCamDist, uDepthPull, uClampY, uWorldSize;
+      #endif
       void main(){
         vec4 idx = texture2D(tIndex, vSheetUv);
         if (idx.a < 0.5) discard;
+        #ifdef USE_SPRITE_DEPTH
+        {
+          // Blender 渲的视深 → 这个像素真正在三维里的位置 → 写进深度缓冲。按 Blender 那台正交相机原样还原：
+          // 画面中心是 target，横向 uRight、纵向 uUpV（俯视那一行的相机朝上方向），再沿视线推前推后。
+          float off = uDepthNear + texture2D(tDepth, vSheetUv).r * uDepthRange - uCamDist;
+          vec3 p = vOrigin + vec3(0.0, uTargetY, 0.0) + uRight * ((vCellUv.x - 0.5) * uWorldSize)
+                 + uUpV * ((vCellUv.y - 0.5) * uWorldSize) - uFwdV * off;
+          // 从一张纸推回来的深度在桌面附近会差一两厘米：手和前臂一沉到桌面下就被桌面 / 写字垫切掉。
+          // 只在桌面下 15 cm 以内（手、前臂）沿视线把点挪到桌面上方；再往下的腿保持真实深度，照样被桌子挡住。
+          if (p.y < uClampY && p.y > uClampY - 0.15 && cameraPosition.y > uClampY) {
+            p = cameraPosition + (p - cameraPosition) * ((uClampY - cameraPosition.y) / (p.y - cameraPosition.y));
+          }
+          p += normalize(cameraPosition - p) * uDepthPull;
+          vec4 clip = projectionMatrix * viewMatrix * vec4(p, 1.0);
+          gl_FragDepth = clamp(0.5 * clip.z / clip.w + 0.5, 0.0, 1.0);
+        }
+        #endif
         float ramp = floor(idx.r*255.0 + 0.5), base = floor(idx.g*255.0 + 0.5), flags = floor(idx.b*255.0 + 0.5);
         vec3 n = normalize(texture2D(tNormal, vSheetUv).rgb*2.0 - 1.0);
         float shade = uAmbient; vec3 tint = vec3(0.0);
@@ -1909,6 +1946,7 @@ function makeKnightMesh(anim) {
   });
   const m = new THREE.Mesh(geo, mat);
   m.userData.elev = a.elevDeg * Math.PI / 180;
+  m.userData.rows = a.rows ?? null;     // 按真实机位角度渲的行（坐姿）：挑最接近镜头的一行，用那一行自己的俯角
   m.frustumCulled = false;
   return m;
 }
@@ -1917,8 +1955,15 @@ function orientKnight(mesh, cam, facing, frame) {
   const p = mesh.position, F = new THREE.Vector3(cam.position.x - p.x, 0, cam.position.z - p.z).normalize();
   mesh.rotation.set(0, Math.atan2(F.x, F.z), 0);
   const a = Math.atan2(F.z * facing.x - F.x * facing.z, F.x * facing.x + F.z * facing.z);
-  const dir = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
-  const u = mesh.material.uniforms, e = mesh.userData.elev, U = new THREE.Vector3(0, 1, 0);
+  let dir = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8, e = mesh.userData.elev;
+  const u = mesh.material.uniforms, U = new THREE.Vector3(0, 1, 0), rows = mesh.userData.rows;
+  if (rows) {
+    const deg = ((a * 180 / Math.PI) % 360 + 360) % 360;
+    const dist = (r) => Math.abs(((deg - r.yaw) % 360 + 540) % 360 - 180);
+    dir = rows.reduce((best, r, i) => (dist(r) < dist(rows[best]) ? i : best), 0);
+    e = rows[dir].elev * Math.PI / 180;
+    u.uTargetY.value = rows[dir].target;
+  }
   u.uRight.value.crossVectors(U, F).normalize();
   u.uUpV.value.copy(U).multiplyScalar(Math.cos(e)).addScaledVector(F, -Math.sin(e));
   u.uFwdV.value.copy(F).multiplyScalar(Math.cos(e)).addScaledVector(U, Math.sin(e));
@@ -2385,7 +2430,9 @@ const study = buildStudy({
   THREE, makeCanvas, pixelTex, spriteTex, shade, mulberry32, makeShelfTextures, makeSoftCanvas,
   pointsMaterial, flameMaterial, COMMON_GLSL, NOISE_GLSL, SOFT_POINT_FRAG, BOOK_COLORS,
   makePageCanvas, makeCoverCanvas, makeEndpaperCanvas, makeKnightMesh, orientKnight, setKnightLights, shared,
-  makePageBurst, sitHands: KN_META.sitHands, glintGeometry, makeGlintMaterial,
+  makePageBurst, sitHands: KN_META.sitHands, sitTurn: KN_META.sitTurn, glintGeometry, makeGlintMaterial,
+  // Blender 建的书桌一角：GLB 的字节打包进来，直接解析（沙盒里不能 fetch）
+  deskModel: { data: deskGlb, GLTFLoader, mergeVertices, mergeGeometries },
 });
 const studyComposer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
 studyComposer.addPass(new RenderPass(study.scene, study.camera));
@@ -2698,7 +2745,9 @@ function frame(dt, draw = true) {
     studyHD.uniforms.uTime.value = wall;
     studyBloom.strength = 0.42 + pose.pow * 0.2 + (pose.surge || 0) * 0.35;
     renderer.toneMappingExposure = 0.95;
+    shared.uViewH.value = innerHeight * studyPR;          // 粒子按书房的渲染分辨率算像素大小
     if (draw) studyComposer.render();
+    shared.uViewH.value = towerViewH;
     renderer.toneMappingExposure = 1.25;
   }
   if (!draw) return;
@@ -2764,13 +2813,20 @@ function loop(t) {
 }
 function renderFrame() { frame(0); }
 
+// 书房按大约 520 行渲染再放大（不插值）：跟坐着的骑士精灵差不多一个像素一格，书桌和骑士的颗粒对得上
+const STUDY_LINES = 520;
+let studyPR = 1, towerViewH = 1;
 function resize() {
   const w = innerWidth, h = innerHeight, pr = quality.pr;
   renderer.setPixelRatio(pr); renderer.setSize(w, h, false);
-  for (const c of [composer, studyComposer]) { c.setPixelRatio(pr); c.setSize(w, h); }
+  studyPR = Math.min(pr, STUDY_LINES / h);
+  composer.setPixelRatio(pr); composer.setSize(w, h);
+  studyComposer.setPixelRatio(studyPR); studyComposer.setSize(w, h);
+  for (const rt of [studyComposer.renderTarget1, studyComposer.renderTarget2]) rt.texture.minFilter = rt.texture.magFilter = THREE.NearestFilter;
   for (const cam of [camera, study.camera]) { cam.aspect = w / h; cam.updateProjectionMatrix(); }
-  shared.uViewH.value = h * pr;
-  for (const pass of [hd2d, studyHD]) { pass.uniforms.uRes.value.set(w * pr, h * pr); pass.uniforms.uBlur.value = 3.5 * pr; }
+  shared.uViewH.value = towerViewH = h * pr;
+  hd2d.uniforms.uRes.value.set(w * pr, h * pr); hd2d.uniforms.uBlur.value = 3.5 * pr;
+  studyHD.uniforms.uRes.value.set(w * studyPR, h * studyPR); studyHD.uniforms.uBlur.value = 3.5 * studyPR;
   compMat.uniforms.uAspect.value = w / h;
   ovU.uAspect.value = w / h; ovU.uScale.value = pr * Math.max(0.7, h / 900);
   if (!running) renderFrame();

@@ -6,7 +6,7 @@ export function buildStudy(H) {
   const {
     THREE, makeCanvas, pixelTex, shade, mulberry32, makeShelfTextures, makeSoftCanvas,
     pointsMaterial, flameMaterial, COMMON_GLSL, NOISE_GLSL, SOFT_POINT_FRAG, BOOK_COLORS,
-    makePageCanvas, makeCoverCanvas, makeKnightMesh, orientKnight, setKnightLights, makePageBurst, sitHands,
+    makePageCanvas, makeCoverCanvas, makeKnightMesh, orientKnight, setKnightLights, makePageBurst, sitHands, sitTurn,
     glintGeometry, makeGlintMaterial,
   } = H;
   const V3 = THREE.Vector3;
@@ -474,7 +474,8 @@ export function buildStudy(H) {
   const desk = new THREE.Group();
   desk.position.set(DESK_X, 0, 0);
   scene.add(desk);
-  {
+  const DESK_MODEL = H.deskModel;          // Blender 建的书桌一角（pipeline/build_desk.py）；没有就用下面代码拼的旧版
+  if (!DESK_MODEL) {
     const V2 = (arr) => arr.map(([r, y]) => new THREE.Vector2(r, y));
     const add = (m, x, y, z, p = desk) => { m.position.set(x, y, z); p.add(m); return m; };
     const box = (w, h, d, mat) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -548,11 +549,96 @@ export function buildStudy(H) {
     }
   }
 
+  /* ---------------- Blender 书桌一角：跟骑士同一套调色板、同一种打光规矩 ----------------
+   * GLB 里每块的材质名是 pal_<色阶>_<基准档>。three.js 先按场景里真实的灯（月光、烛光、阴影）算一遍，
+   * 再看「亮了多少倍」，只在这条色阶里上下挪档（骑士精灵也是这么打光的），颜色永远落在调色板里；
+   * 外面再套一圈往外推的暗色背面壳当描边。同材质的零件合成一个网格，省 draw call。 */
+  const STUDY_RAMPS = {   // 和 pipeline/build_desk.py 的 RAMPS 一致
+    wood: ['#1c110b', '#382114', '#583520', '#7c5230', '#a47648'],
+    gold: ['#4a3520', '#80633b', '#b18a52', '#d5b579', '#f2e2b4'],
+    leather: ['#14140e', '#22281c', '#34402a', '#4e5c3a', '#6e7c50'],
+    crimson: ['#2a0b16', '#421323', '#681a32', '#8c3450', '#b25a74'],
+    navy: ['#0a0f1a', '#101725', '#19243a', '#2a3650', '#43527a'],
+    page: ['#5a4a36', '#9c8664', '#d2c098', '#efe4c8', '#fffaf0'],
+    ink: ['#0c0a18', '#18142c', '#262242', '#363258', '#46426c'],
+    gem: ['#0a1636', '#142b5c', '#2856a0', '#6b91d3', '#cfe0ff'],
+  };
+  const palMats = new Map();
+  function paletteMat(ramp, base) {
+    const key = `${ramp}_${base}`;
+    if (palMats.has(key)) return palMats.get(key);
+    const cols = STUDY_RAMPS[ramp].map((h) => new THREE.Color(h));
+    const m = new THREE.MeshStandardMaterial({ color: cols[base], roughness: ramp === 'gold' ? 0.4 : 0.85, metalness: 0 });
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uRamp = { value: cols.map((c) => new V3(c.r, c.g, c.b)) };
+      sh.uniforms.uBase = { value: base };
+      sh.uniforms.uBands = { value: new THREE.Vector4(0.1, 0.3, 0.75, 1.7) };
+      sh.fragmentShader = 'uniform vec3 uRamp[5]; uniform float uBase; uniform vec4 uBands;\n' + sh.fragmentShader.replace('#include <opaque_fragment>', /* glsl */`
+        {
+          // 亮了多少倍 → 在色阶里挪几档；保留一点灯的颜色（月光偏冷、烛光偏暖）
+          float lumA = max(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
+          float lumO = dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722));
+          float k = lumO / lumA;
+          float off = k < uBands.x ? -2.0 : k < uBands.y ? -1.0 : k < uBands.z ? 0.0 : k < uBands.w ? 1.0 : 2.0;
+          int idx = int(clamp(uBase + off, 0.0, 4.0));
+          vec3 pal = uRamp[0];
+          for (int i = 1; i < 5; i++) if (i == idx) pal = uRamp[i];
+          vec3 hue = clamp(outgoingLight / max(lumO, 1e-4), 0.0, 2.5);
+          outgoingLight = pal * mix(vec3(1.0), hue, 0.3) * (k > 2.6 ? 1.0 + (k - 2.6) * 0.12 : 1.0);
+        }
+        #include <opaque_fragment>`);
+    };
+    palMats.set(key, m);
+    return m;
+  }
+  const outlineMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(STUDY_RAMPS.ink[0]), side: THREE.BackSide });
+  outlineMat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n transformed += normal * 0.0055;');
+  };
+  if (DESK_MODEL) {
+    const { GLTFLoader, mergeVertices, mergeGeometries } = DESK_MODEL;
+    // 屏保主题在沙盒里不能 fetch（连 data: 地址也不行）：给了 data（GLB 的字节）就直接解析，否则按 url 加载
+    const onDesk = (gltf) => {
+      gltf.scene.updateMatrixWorld(true);
+      for (const rootName of ['Desk', 'Chair']) {
+        const root = gltf.scene.getObjectByName(rootName);
+        const byMat = new Map(), all = [];
+        root.traverse((o) => {
+          if (!o.isMesh) return;
+          const g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+          for (const a of Object.keys(g.attributes)) if (a !== 'position' && a !== 'normal') g.deleteAttribute(a);
+          const name = o.material.name;
+          if (!byMat.has(name)) byMat.set(name, []);
+          byMat.get(name).push(g);
+          const h = new THREE.BufferGeometry(); h.setAttribute('position', g.getAttribute('position')); if (g.index) h.setIndex(g.index);
+          all.push(h);
+        });
+        for (const [name, geos] of byMat) {
+          const [, ramp, step] = name.match(/^pal_([a-z]+)_(\d)$/) ?? [];
+          if (!ramp) continue;
+          const m = new THREE.Mesh(mergeGeometries(geos), paletteMat(ramp, +step));
+          m.castShadow = m.receiveShadow = true;
+          scene.add(m);
+        }
+        // 描边：位置焊在一起再算平滑法线，背面壳沿法线往外推一点
+        const hull = mergeVertices(mergeGeometries(all), 1e-4);
+        hull.computeVertexNormals();
+        const ol = new THREE.Mesh(hull, outlineMat);
+        scene.add(ol);
+      }
+    };
+    const loader = new GLTFLoader();
+    if (DESK_MODEL.data) loader.parse(DESK_MODEL.data.buffer.slice(DESK_MODEL.data.byteOffset, DESK_MODEL.data.byteOffset + DESK_MODEL.data.byteLength), '', onDesk, (e) => console.error('[desk]', e));
+    else loader.load(DESK_MODEL.url, onDesk);
+  }
+
   /* ---------------- 主角：坐着读书的骑士 ---------------- */
   const knight = makeKnightMesh('sit');
   knight.position.copy(KNIGHT_POS);
   knight.material.uniforms.uFogColor.value.copy(scene.fog.color);
-  knight.material.uniforms.uDepthPull.value = 0.32;      // 椅面、扶手在身体里的那部分都让给骑士
+  // 坐姿精灵带逐像素深度（腿在桌下、手在书上、背靠椅背），只留一点点余量防止贴面闪烁
+  knight.material.uniforms.uDepthPull.value = 0.03;
+  knight.material.uniforms.uClampY.value = TOP + 0.015;   // 桌面 + 写字垫和金线的厚度
   scene.add(knight);
   const KNIGHT_FACING = new V3(1, 0, 0);
 
@@ -572,9 +658,49 @@ export function buildStudy(H) {
     const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.46, 8).rotateZ(Math.PI / 2), cm); spine.position.y = 0.01; book.add(spine);
     const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(0.012, 0.22), new THREE.MeshStandardMaterial({ color: 0xa82a3a, side: THREE.DoubleSide })); ribbon.position.set(0.28, 0.0, 0.02); ribbon.rotation.set(-Math.PI / 2, 0, 0.3); book.add(ribbon);
   }
+  // 翻动的那一页：从书脊（x 轴）伸到页边的一条纸，绕书脊往上翻（不是往桌子里转），边翻边弯：
+  // 页边先起、后落，像被手捏着角带过去。phi 0 = 平躺在右边，1 = 平躺在左边
+  const PAGE_W = 0.29, PAGE_L = 0.42, PAGE_SEG = 10;
+  function makePageGeo() {
+    const g = new THREE.BufferGeometry();
+    const pos = new Float32Array((PAGE_SEG + 1) * 2 * 3), uv = new Float32Array((PAGE_SEG + 1) * 2 * 2), idx = [];
+    for (let i = 0; i <= PAGE_SEG; i++) {
+      uv.set([0, i / PAGE_SEG, 1, i / PAGE_SEG], i * 4);
+      if (i < PAGE_SEG) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+    }
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(idx);
+    return g;
+  }
+  function setPage(g, phi) {
+    // phi 是页边（手捏着的地方）绕书脊转过的角度；靠书脊那段落后、页边领先，纸弯成弓，页边始终在手里
+    const pos = g.attributes.position.array, c = Math.PI * phi, bend = 0.9 * Math.sin(c);
+    let y = 0, z = 0;
+    for (let i = 0; i <= PAGE_SEG; i++) {
+      pos.set([-PAGE_L / 2, y, z, PAGE_L / 2, y, z], i * 6);
+      const s = (i + 0.5) / PAGE_SEG, a = c - bend / 2 + bend * s;
+      z += Math.cos(a) * PAGE_W / PAGE_SEG; y += Math.sin(a) * PAGE_W / PAGE_SEG;
+    }
+    g.attributes.position.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingSphere();
+  }
   const FLIPS = 12;
-  const flipGeo = new THREE.PlaneGeometry(0.42, 0.29, 1, 4); flipGeo.rotateX(-Math.PI / 2); flipGeo.translate(0, 0, 0.148);
-  const flips = Array.from({ length: FLIPS }, () => { const m = new THREE.Mesh(flipGeo, pageMat); m.position.y = 0.045; m.visible = false; book.add(m); return { m, t0: -10, dur: 0.6 }; });
+  const flips = Array.from({ length: FLIPS }, () => { const m = new THREE.Mesh(makePageGeo(), pageMat); m.position.y = 0.045; m.visible = false; m.frustumCulled = false; book.add(m); return { m, t0: -10, dur: 0.6 }; });
+  // 骑士手里那一页：跟着精灵帧走（sitTurn.phi），不按时间自己翻
+  // 翻起来的纸背光时别成一块灰板：自己带一点纸色的光
+  const handPageMat = pageMat.clone(); handPageMat.emissiveIntensity = 0.3;
+  const handPage = new THREE.Mesh(makePageGeo(), handPageMat); handPage.position.y = 0.045; handPage.visible = false; handPage.frustumCulled = false; book.add(handPage);
+  let handPhi = 0;
+  // 书不挡骑士：书在桌子之后、骑士之前画，并且不写深度。精灵的深度是从一张纸推出来的，手那里差一两厘米，
+  // 写深度的话书页会把手切掉一截；这样手（连同手里那页）永远完整地压在书上。书自己内部按封面 → 书页 → 翻动的纸排先后。
+  const bookPageMat = pageMat.clone(); bookPageMat.depthWrite = false;
+  handPageMat.depthWrite = false;
+  book.traverse((o) => {
+    if (!o.isMesh) return;
+    const turning = o === handPage || flips.some((f) => f.m === o);
+    if (o.material === pageMat) o.material = bookPageMat;
+    else if (o.material !== handPageMat) { o.material = o.material.clone(); o.material.depthWrite = false; }
+    o.renderOrder = turning ? 7 : o.material.map === coverTex ? 5 : 6;
+  });
+  knight.renderOrder = 10;
   let flipNext = 0;
   function flipPage(t, dur = 0.7) { const f = flips[flipNext]; flipNext = (flipNext + 1) % FLIPS; f.t0 = t; f.dur = dur; }
   const bookLight = new THREE.PointLight(0x9fd0ff, 0, 0, 2); bookLight.position.set(book.position.x, 1.5, 0); desk.add(bookLight);
@@ -589,13 +715,18 @@ export function buildStudy(H) {
   // —— 桌面：三枝烛台、蜡烛堆、书摞、墨水和羽毛笔、小星辉仪、小匣子、钥匙、辉石结晶、卷轴、小水晶球
   { const p = dW(0.32, -0.82); addCandelabra(p.x, p.z, 0.5, 3, TOP); }
   for (const [lx, lz, h] of [[0.12, -0.55, 0.12], [0.2, -0.5, 0.2], [0.05, -0.62, 0.08]]) { const p = dW(lx, lz); addCandle(p.x, p.y, p.z, h); }
-  { const p = dW(0.3, 0.95); addPile(p.x, p.y, p.z, 4); }
-  { const p = dW(0.32, 0.62); const top = addPile(p.x, p.y, p.z, 2); addCandle(p.x, top, p.z, 0.16); }
-  const ink = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.08, 10), new THREE.MeshStandardMaterial({ color: 0x14182c, roughness: 0.1, metalness: 0.3 }));
-  ink.position.copy(dW(-0.32, 0.45, TOP + 0.04)); scene.add(ink);
-  const fTex = pixelTex(featherCanvas()); fTex.wrapS = fTex.wrapT = THREE.ClampToEdgeWrapping;
-  const feather = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.36), new THREE.MeshStandardMaterial({ map: fTex, alphaTest: 0.5, side: THREE.DoubleSide }));
-  feather.position.copy(dW(-0.29, 0.48, TOP + 0.2)); feather.rotation.set(0.1, 0.4, -0.35); scene.add(feather);
+  if (DESK_MODEL) {
+    // 书摞、墨水瓶和羽毛笔、卷轴都在 Blender 模型里；只留书摞顶上那支蜡烛（火苗还是实时画的）
+    const p = dW(0.32, 0.62); addCandle(p.x, TOP + 0.1, p.z, 0.16);
+  } else {
+    { const p = dW(0.3, 0.95); addPile(p.x, p.y, p.z, 4); }
+    { const p = dW(0.32, 0.62); const top = addPile(p.x, p.y, p.z, 2); addCandle(p.x, top, p.z, 0.16); }
+    const ink = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.08, 10), new THREE.MeshStandardMaterial({ color: 0x14182c, roughness: 0.1, metalness: 0.3 }));
+    ink.position.copy(dW(-0.32, 0.45, TOP + 0.04)); scene.add(ink);
+    const fTex = pixelTex(featherCanvas()); fTex.wrapS = fTex.wrapT = THREE.ClampToEdgeWrapping;
+    const feather = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.36), new THREE.MeshStandardMaterial({ map: fTex, alphaTest: 0.5, side: THREE.DoubleSide }));
+    feather.position.copy(dW(-0.29, 0.48, TOP + 0.2)); feather.rotation.set(0.1, 0.4, -0.35); scene.add(feather);
+  }
   const mini = new THREE.Group(); mini.position.copy(dW(0.22, 0.3)); scene.add(mini);
   {
     const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.07, 0.2, 8), goldMat); stand.position.y = 0.1; mini.add(stand);
@@ -609,7 +740,7 @@ export function buildStudy(H) {
   addKey(dW(-0.2, -0.44).x, TOP + 0.01, -0.44, 2.2, 0.8);
   addCluster(dW(-0.34, -0.66).x, TOP, -0.66, 0.32, 6);
   const scrollGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.34, 10).rotateZ(Math.PI / 2), scrollMat = new THREE.MeshStandardMaterial({ color: 0xe8dab4, roughness: 0.9 });
-  for (const [lx, lz, ry] of [[0.35, 0.12, 0.3], [0.38, 0.05, 0.5], [0.33, 0.19, 0.2]]) { const s = new THREE.Mesh(scrollGeo, scrollMat); s.position.copy(dW(lx, lz, TOP + 0.03)); s.rotation.y = ry; scene.add(s); }
+  if (!DESK_MODEL) for (const [lx, lz, ry] of [[0.35, 0.12, 0.3], [0.38, 0.05, 0.5], [0.33, 0.19, 0.2]]) { const s = new THREE.Mesh(scrollGeo, scrollMat); s.position.copy(dW(lx, lz, TOP + 0.03)); s.rotation.y = ry; scene.add(s); }
   { const p = dW(-0.05, 0.62); addCrystalBall(p.x, p.y, p.z, 0.07); }
   // 靠在桌边的盾和剑
   {
@@ -1011,13 +1142,21 @@ export function buildStudy(H) {
     camera.fov = 38 - k * 8; camera.updateProjectionMatrix();
     if (api.debugCam) { const [p, l, f] = api.debugCam; camera.position.set(...p); camera.lookAt(...l); camera.fov = f; camera.updateProjectionMatrix(); }
 
+    // 读书（0-7 帧循环，约 2.7 秒一口气）；隔几秒用右手翻一页（后面 12 帧，每帧 sitTurn.frameSec 秒），手里那页按同一组角度翻
     knClock += dt;
-    if (turning < 0 && t > nextTurn && pose.pow < 0.3) { turning = 4; knClock = 0; }
+    const T0 = sitTurn.firstFrame, TN = sitTurn.phi.length;
+    if (turning < 0 && t > nextTurn && pose.pow < 0.3) { turning = 0; knClock = 0; }
     if (turning >= 0) {
-      if (knClock > 0.16) { knClock = 0; turning++; if (turning === 6) flipPage(t, 0.75); }
-      if (turning > 7) { turning = -1; nextTurn = t + 5 + Math.random() * 4; }
-      knFrame = Math.min(7, Math.max(4, turning));
-    } else knFrame = Math.floor(t * 2.2) % 4;
+      if (knClock > (sitTurn.frameSec ?? 0.11)) { knClock = 0; turning++; }
+      if (turning >= TN) { turning = -1; nextTurn = t + 6 + Math.random() * 4; handPage.visible = false; handPhi = 0; }
+    }
+    if (turning >= 0) {
+      knFrame = T0 + turning;
+      const target = sitTurn.phi[turning];
+      if (target === null) handPhi = 0; else handPhi += (target - handPhi) * Math.min(1, dt * 25);
+      handPage.visible = target !== null || handPhi > 0.001;
+      if (handPage.visible) setPage(handPage.geometry, handPhi);
+    } else knFrame = Math.floor(t * 3) % T0;
     orientKnight(knight, camera, KNIGHT_FACING, knFrame);
     setKnightLights(knight, [
       { pos: candleLight.position, color: [1.0, 0.7, 0.4], pow: 0.4, range: 4.5 },
@@ -1030,7 +1169,7 @@ export function buildStudy(H) {
     flips.forEach((f) => {
       const e = (t - f.t0) / f.dur;
       f.m.visible = e >= 0 && e <= 1;
-      if (f.m.visible) { const a = Math.PI * (e * e * (3 - 2 * e)); f.m.rotation.set(a, 0, 0); f.m.position.y = 0.045 + Math.sin(a) * 0.04; }
+      if (f.m.visible) setPage(f.m.geometry, e * e * (3 - 2 * e));
     });
     if (pose.burst && t - lastBurst > 1) { lastBurst = t; pageBurst.fire(t, bookWorld().add(new V3(0, 0.08, 0)), camera.position.clone().sub(bookWorld()).normalize()); }
     pageBurst.update(t);
@@ -1039,7 +1178,7 @@ export function buildStudy(H) {
     bookLight.intensity = 0.2 + pose.pow * 0.7;
     bookGlowMat.opacity = Math.min(1, pose.pow * 0.22);
     bookGlow.scale.setScalar(0.5 + pose.pow * 0.9);
-    pageMat.emissiveIntensity = 0.03 + pose.pow * 0.1;
+    pageMat.emissiveIntensity = bookPageMat.emissiveIntensity = 0.03 + pose.pow * 0.1;
     glint.emissiveIntensity = 0.28 + surge * 1.8 + 0.04 * Math.sin(t * 2);
     orbMats.forEach((m) => { m.uniforms.uPow.value = 0.3 + surge * 1.5; });
 
@@ -1066,6 +1205,8 @@ export function buildStudy(H) {
   const api = {
     scene, camera, update, debugCam: null,
     focusWorld: () => knight.position.clone().add(new V3(0.4, 0.9, 0)),
+    turnPage: () => { nextTurn = -1; },          // 调试：马上翻一页
+    get turning() { return turning; },
     bookWorld,
   };
   return api;

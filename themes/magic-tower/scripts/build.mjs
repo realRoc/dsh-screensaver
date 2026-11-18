@@ -27,7 +27,7 @@ const opts = {
   format: 'esm',
   minify: true,
   target: 'chrome130',
-  loader: { '.png': 'dataurl' },
+  loader: { '.png': 'dataurl', '.glb': 'binary' },
   write: false,
   logLevel: 'info',
   plugins: [{ name: 'inline-html', setup: (b) => b.onEnd((r) => { if (!r.errors.length) write(r.outputFiles[0].text) }) }],
