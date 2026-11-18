@@ -178,6 +178,17 @@ app.presentationOptions = [.hideDock, .hideMenuBar, .disableProcessSwitching, .d
 win.makeKeyAndOrderFront(nil)
 app.activate(ignoringOtherApps: true)
 
+// 前台被别的程序拿走（比如屏保副屏窗口晚一步弹出来）就拿回来，不然 Touch ID 不理我们、摸了没反应。
+// 屏保要弹密码框时会先把我们停掉，不会跟系统验证框抢
+NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+  DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+    if !app.isActive {
+      app.activate(ignoringOtherApps: true)
+      win.makeKeyAndOrderFront(nil)
+    }
+  }
+}
+
 // 指纹图标平时透明，摸到传感器（认出来 / 没认出来）才淡出来，过一会儿再淡掉。
 // 只调里面那层画图标的视图（PKGlyphView）：LAAuthenticationView 自己和外面那层会查自己是不是被藏起来了。
 // 系统没给「手指放上来了」的公开回调，这里挂 LAAuthenticationView 的私有方法：
