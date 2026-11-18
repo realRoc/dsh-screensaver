@@ -10,14 +10,14 @@ dsh-screensaver 就是为这种时候做的：样子跟 Mac 锁屏一样，回�
 
 ![「亚空间跃迁」主题：跃迁途中列出正在运行的 Claude Code、Codex、DeepSeek Harness 会话](docs/images/subspace-zh.jpg)
 
-每个主题都有两幅画面：没有 agent 在跑时的静止画面，和 agent 在跑时的运动画面，会自己来回切换。
-下面每段动图都是一幅画面 3 秒、转场、再另一幅画面 5 秒。
+亚空间跃迁和魔法书斋都有两幅画面：没有 agent 在跑时的静止画面，和 agent 在跑时的运动画面，会自己来回切换。
+下面每段动图都是一幅画面 3 秒、转场、再另一幅画面 5 秒。时钟是仿 macOS 锁屏，没有动画场景，只有时间在走。
 
 | | agent 开始跑：静止 → 运动 | agent 全部结束：运动 → 静止 |
 | --- | --- | --- |
 | **亚空间跃迁**<br>`subspace` | ![亚空间跃迁：常规宇宙里三颗恒星，镜头锁定入口、跃迁进亚空间隧道，左侧列出会话](docs/images/subspace-enter.gif) | ![亚空间跃迁：会话全部结束，脱离隧道，回到三星系统](docs/images/subspace-exit.gif) |
 | **魔法书斋**<br>`magic-tower` | ![魔法书斋：塔顶书房里骑士在月光下读书，镜头扎进书页、穿过符文传送门，骑士沿塔里的书阶上行](docs/images/magic-tower-enter.gif) | ![魔法书斋：会话全部结束，一本书飞到镜头前打开，回到月光下的书房](docs/images/magic-tower-exit.gif) |
-| **时钟**<br>`basic` | ![「时钟」主题：仿 macOS 锁屏，日期时间、电池、Wi-Fi，底部一行「使用触控 ID 或输入密码」](docs/images/basic-zh.jpg) | 内置：仿 macOS 锁屏，没有动画场景。 |
+| **时钟**<br>`basic` | ![「时钟」主题 19:00：仿 macOS 锁屏，日期时间、电池、Wi-Fi，底部一行「使用触控 ID 或输入密码」](docs/images/basic-start-zh.jpg) | ![「时钟」主题 19:42：还是同一个锁屏，只有时间走了](docs/images/basic-finish-zh.jpg) |
 
 ## 和系统锁屏、系统屏保、动态壁纸有什么不同
 

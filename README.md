@@ -13,14 +13,15 @@ with `npx`.
 
 ![Subspace Jump theme: Claude Code, Codex and DeepSeek Harness sessions listed during a warp jump](docs/images/subspace.jpg)
 
-Every theme has an idle scene for when nothing is running and a running scene for when your agents are working, and
-switches between them by itself. Each clip below is 3 s of one scene, the transition, then 5 s of the other.
+Subspace Jump and Arcane Study each have an idle scene for when nothing is running and a running scene for when your
+agents are working, and switch between them by themselves. Each clip below is 3 s of one scene, the transition, then
+5 s of the other. Clock is a macOS-style lock screen with no scenes: only the time moves.
 
 | | Agents start: idle → running | Agents finish: running → idle |
 | --- | --- | --- |
 | **Subspace Jump**<br>`subspace` | ![Subspace Jump: three suns in normal space, then the camera locks onto a portal and jumps into the subspace tunnel while sessions are listed on the left](docs/images/subspace-enter.gif) | ![Subspace Jump: all sessions finish, the tunnel ends and the camera drops back to the three suns](docs/images/subspace-exit.gif) |
 | **Arcane Study**<br>`magic-tower` | ![Arcane Study: a knight reads by moonlight in a tower study, then the camera dives into the book through a rune portal and the knight climbs the tower stairs](docs/images/magic-tower-enter.gif) | ![Arcane Study: all sessions finish, a book flies to the camera and opens, and the scene returns to the moonlit study](docs/images/magic-tower-exit.gif) |
-| **Clock**<br>`basic` | ![Clock theme: a macOS-style lock screen with date, time, battery, Wi-Fi and "Touch ID or Enter Password"](docs/images/basic-zh.jpg) | Built in: a macOS-style lock screen with no scenes. |
+| **Clock**<br>`basic` | ![Clock theme at 19:00: a macOS-style lock screen with date, time, battery, Wi-Fi and "Touch ID or Enter Password"](docs/images/basic-start.jpg) | ![Clock theme at 19:42: the same lock screen, only the time has moved](docs/images/basic-finish.jpg) |
 
 ## Why not the macOS screen saver, the lock screen, or a wallpaper?
 
