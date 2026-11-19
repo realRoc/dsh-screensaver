@@ -1,6 +1,6 @@
 {
   "name": "dsh-screensaver",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "A lock-screen-style screen saver for macOS that keeps AI coding agents (Claude Code, Codex, DeepSeek Harness) running while you step away: Touch ID unlock, no sleep, lid-closed awake (after a one-time authorization), and three built-in themes (a lock-screen clock, the Subspace Jump warp tunnel and the Arcane Study pixel-art tower, the last two showing your live agent sessions). DeepSeek Harness (dsh) plugin, also runs standalone.",
   "icon": "assets/icon.png",
   "type": "module",
