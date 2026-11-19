@@ -9,6 +9,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { buildStudy } from './study.js';
+import { compileScore, FX_NAMES, makeCursor } from './score.js';
 import KN_META from '../assets/knight.json';
 import walkIndex from '../assets/knight_walk_index.png';
 import walkNormal from '../assets/knight_walk_normal.png';
@@ -1450,7 +1451,7 @@ const flashLight = new THREE.PointLight(0xbfe4ff, 0, 0, 2); scene.add(flashLight
 /* ============================================================
  * 天井里的奇景
  * ============================================================ */
-const camYU = { value: 0 }, camSU = { value: 0 }, knightU = { value: new THREE.Vector3() };
+const camYU = { value: 0 }, camSU = { value: 0 };
 const softWhite = new THREE.CanvasTexture(makeSoftCanvas('rgba(255,255,255,1)', 'rgba(255,255,255,0)'));
 const armGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: softWhite, color: new THREE.Color(0.5, 1.2, 2.4), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
 armGlow.scale.setScalar(7);
@@ -1589,7 +1590,7 @@ function makeTrails(N, L, headSize, tailSize, gain) {
   };
 }
 
-/* 精灵：三种——带翅膀的小精灵、拖长尾的鬼火、绕着骑士转的萤火虫群 */
+/* 精灵：两种——带翅膀的小精灵、拖长尾的鬼火 */
 const fairyFrames = makeFairyFrames().map(spriteTex);
 const FAIRY_COLORS = [[1.0, 0.55, 0.9], [0.5, 0.95, 1.0], [1.0, 0.85, 0.45], [0.55, 1.0, 0.65], [0.8, 0.65, 1.0]];
 const FAIRY_N = 12;
@@ -1616,31 +1617,7 @@ function fairyPos(f, t, camY, out) {
   const y = wrap(f.y0 + f.vy * t, camY - 8, 28) + 1.1 * Math.sin(tt * 1.1 + f.ph) + (f.wisp ? 0 : 0.2 * Math.sin(tt * 5.3 + f.ph2));
   return out.copy(polar(r, th, y));
 }
-{
-  const N = 160, pos = new Float32Array(N * 3), rnd = new Float32Array(N);
-  for (let i = 0; i < N; i++) { pos.set([Math.random(), Math.random(), Math.random()], i * 3); rnd[i] = Math.random(); }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('aRand', new THREE.BufferAttribute(rnd, 1));
-  const swarm = new THREE.Points(g, pointsMaterial(COMMON_GLSL + NOISE_GLSL + /* glsl */`
-    attribute float aRand;
-    uniform vec3 uKnight;
-    varying vec3 vColor; varying float vAlpha;
-    void main(){
-      float a = uTime*(0.4 + position.x*0.8)*(position.y > 0.5 ? 1.0 : -1.0) + aRand*40.0;
-      float r = 0.5 + position.z*1.9;
-      vec3 p = uKnight + vec3(cos(a)*r, 0.4 + position.y*2.2 + 0.3*sin(uTime*1.3 + aRand*20.0), sin(a)*r);
-      p += curlNoise(p*0.7 + uTime*0.2) * 0.25;
-      vec4 mv = viewMatrix*vec4(p,1.0);
-      gl_Position = projectionMatrix*mv;
-      float tw = pow(0.5 + 0.5*sin(uTime*(3.0 + aRand*5.0) + aRand*70.0), 3.0);
-      vColor = (aRand > 0.5 ? vec3(1.0,0.85,0.4) : vec3(0.6,1.0,0.7)) * (0.6 + 2.2*tw);
-      vAlpha = (0.3 + tw) * fogF(-mv.z);
-      gl_PointSize = max(1.5, pxSize(0.04 + 0.03*tw, -mv.z));
-    }`, SOFT_POINT_FRAG, { uKnight: knightU }));
-  swarm.frustumCulled = false;
-  scene.add(swarm); fxObjects.push(swarm);
-}
+// （原来还有一群绕着骑士转的萤火虫：贴着他打转像一团蚊子，去掉了；他脚下每一步的辉光还在）
 
 /* 灵光巨蛇：粒子组成的长蛇绕天井游动（一条辉石蓝、一条熔金红），带背鳍 */
 function makeSerpent(o) {
@@ -1756,7 +1733,7 @@ const comets = Array.from({ length: COMET_N }, () => {
   return { state: 0, p0: new THREE.Vector3(), p1: new THREE.Vector3(), p2: new THREE.Vector3(), t0: 0, dur: 1, col: [1, 1, 1], glow };
 });
 let nextComet = 1.0;
-function spawnComet(camY, from) {
+function spawnComet(camY, from, pitch = null) {
   const c = comets.find((x) => x.state === 0); if (!c) return;
   const a0 = Math.random() * Math.PI * 2, a1 = a0 + Math.PI + rand(-1, 1);
   const hitWall = Math.random() < 0.5;
@@ -1766,6 +1743,11 @@ function spawnComet(camY, from) {
   if (from) { c.p0.copy(from); c.p2.copy(polar(8.5, a1, camY + rand(-1, 15))); c.p1.copy(c.p0).add(c.p2).multiplyScalar(0.5); c.p1.y += rand(1, 4); }
   c.dur = c.p0.distanceTo(c.p2) / rand(7, 12);
   c.col = COMET_COLORS[Math.floor(Math.random() * COMET_COLORS.length)];
+  if (pitch !== null) {          // 主旋律：音越高落点越高、颜色越暖
+    c.p2.y = camY + 1 + pitch * 16; c.p1.y = Math.max(c.p0.y, c.p2.y) + rand(1, 4);
+    c.col = pitchCol(pitch);
+    c.dur = c.p0.distanceTo(c.p2) / rand(9, 12);
+  }
   cometTrails.cols[comets.indexOf(c)] = c.col;
   c.glow.material.color.setRGB(c.col[0] * 3, c.col[1] * 3, c.col[2] * 3);
   c.t0 = time; c.state = 1; c.glow.visible = true;
@@ -2057,18 +2039,405 @@ const arcMat = new THREE.ShaderMaterial({
 const slashArc = new THREE.Mesh(new THREE.RingGeometry(0.5, 5.0, 96, 1), arcMat);
 slashArc.renderOrder = 4; slashArc.visible = false; slashArc.frustumCulled = false;
 scene.add(slashArc);
-// 冲击波：脚下水平扩散的光环
-const waveMat = new THREE.ShaderMaterial({
-  uniforms: { uAlpha: { value: 0 }, uColor: { value: new THREE.Color(0.45, 0.8, 1.0) } },
-  vertexShader: /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+// 冲击波：水平扩散的光环。一个池子——光柱落点、巨剑、星辉仪脉冲可以同时各炸各的
+const WAVE_FRAG = /* glsl */`
+  uniform float uAlpha; uniform vec3 uColor; varying vec2 vUv;
+  float g2(float x){ return exp(-x*x); }
+  void main(){ float r = length(vUv - 0.5)*2.0; float a = g2((r - 0.85)*9.0) + g2((r - 0.6)*14.0)*0.4 + g2((r - 0.35)*10.0)*0.15; gl_FragColor = vec4(uColor*a*uAlpha*2.0, 1.0); }`;
+const UV_VERT = /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
+const waveGeo = new THREE.PlaneGeometry(2, 2); waveGeo.rotateX(-Math.PI / 2);
+const waves = Array.from({ length: 8 }, () => {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uAlpha: { value: 0 }, uColor: { value: new THREE.Color(0.45, 0.8, 1.0) } },
+    vertexShader: UV_VERT, fragmentShader: WAVE_FRAG,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const m = new THREE.Mesh(waveGeo, mat); m.visible = false; m.frustumCulled = false; scene.add(m);
+  return { m, mat, t0: -100, dur: 1.25, r: 1 };
+});
+let waveNext = 0;
+function startWave(y, r, col, x = 0, z = 0, dur = 1.25) {
+  const w = waves[waveNext]; waveNext = (waveNext + 1) % waves.length;
+  w.m.position.set(x, y, z); w.t0 = time; w.r = r; w.dur = dur; w.mat.uniforms.uColor.value.setRGB(...col);
+}
+function updateWaves(t) {
+  for (const w of waves) {
+    const k = (t - w.t0) / w.dur;
+    w.m.visible = k >= 0 && k < 1;
+    if (!w.m.visible) continue;
+    w.m.scale.setScalar(0.5 + easeOut(k) * w.r);
+    w.mat.uniforms.uAlpha.value = 1 - k;
+  }
+}
+
+/* ============================================================
+ * 乐器特效。先有一首有节奏的 BGM，每种乐器对应一种特效（对照表在 src/score.js 的 INSTRUMENT_FX）：
+ *   beam    天光坠落  底鼓      塔顶一道光柱劈进天井，落点炸开冲击波、往上溅光屑
+ *   sigil   法阵      军鼓      井中闪现一面法阵，沿圆周描出来、旋转，碎成光屑
+ *   glitter 星芒      镲        一小簇十字星芒闪一下（只在局部，不让整屏变亮）
+ *   ripple  地脉      贝斯      一圈符文光环贴着书墙从下往上扫过整座塔
+ *   aurora  极光      铺底/弦乐 一条极光丝带绕着天井盘旋，音符多长就亮多久
+ *   comet   流星      主旋律    流星划过天井，音越高落点越高、颜色越暖
+ *   chime   灯链      琶音/钟琴 一点光沿栏杆往前跑，路过的灯一盏盏迸亮
+ *   swell / slash / shower    重音 / 段落重拍 / 过门：星辉仪脉冲、光之巨剑、彗星齐射（原来的三个大事件）
+ * 统一入口 triggerFx(name, { v 力度 0..1, p 音高 0..1, d 时值秒 })。
+ * ============================================================ */
+const FX_COL = { blue: [0.45, 0.8, 1.0], gold: [1.0, 0.8, 0.42], violet: [0.72, 0.5, 1.0], white: [0.85, 0.95, 1.0] };
+// 音高 → 外观，所有乐器特效共用一套：
+//   低音：在塔里更低、更大更粗、更慢，深蓝紫；高音：更高、更小更细、更快，青白 → 金
+const PITCH_STOPS = [[0, [0.5, 0.32, 1.0]], [0.35, [0.38, 0.62, 1.0]], [0.65, [0.62, 0.92, 1.0]], [1, [1.0, 0.8, 0.42]]];
+function pitchCol(p) {
+  p = THREE.MathUtils.clamp(p, 0, 1);
+  for (let i = 1; i < PITCH_STOPS.length; i++) {
+    const [p1, c1] = PITCH_STOPS[i], [p0, c0] = PITCH_STOPS[i - 1];
+    if (p <= p1) { const k = (p - p0) / (p1 - p0); return c0.map((x, j) => x + (c1[j] - x) * k); }
+  }
+  return PITCH_STOPS[PITCH_STOPS.length - 1][1];
+}
+const lerp = THREE.MathUtils.lerp;
+/** y：离镜头高度的偏移；size：大小倍数；speed：快慢倍数 */
+const pitchStyle = (p) => ({ col: pitchCol(p), y: lerp(-0.8, 9, p), size: lerp(1.35, 0.7, p), speed: lerp(0.75, 1.45, p) });
+const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const tmpF = new THREE.Vector3();
+/** 天井里、镜头前方一个点（落在井口里，不落到台阶上） */
+function fxPoint(spread = 1, y0 = -1, y1 = 4, d0 = 5, d1 = 9) {
+  camera.getWorldDirection(tmpF); tmpF.y = 0; tmpF.normalize();
+  const p = new THREE.Vector3().copy(camera.position).addScaledVector(tmpF, rand(d0, d1)).addScaledVector(camRight, rand(-3, 3) * spread);
+  const r = Math.hypot(p.x, p.z), R = 4.2;
+  if (r > R) { p.x *= R / r; p.z *= R / r; }
+  p.y = camera.position.y + rand(y0, y1);
+  return p;
+}
+// 闪光限流：整屏变亮（闪光灯 + 泛光加强）一秒最多 3 次，跟着鼓点打特效也不会连闪；系统设了「减弱动态效果」就不震屏、闪光减弱
+const flashLog = [];
+function hit({ flash: f = 0, bloom: b = 0, shake: sh = 0, res = 0, ring = 0, arm = 0, at = null } = {}) {
+  resonance = Math.max(resonance, res); ringFlare = Math.max(ringFlare, ring); armPulse = Math.max(armPulse, arm);
+  if (!REDUCED_MOTION) shake = Math.max(shake, sh);
+  if (f <= 0 && b <= 0) return;
+  while (flashLog.length && time - flashLog[0] > 1) flashLog.shift();
+  if (flashLog.length >= 3) return;
+  flashLog.push(time);
+  const k = REDUCED_MOTION ? 0.4 : 1;
+  flash = Math.max(flash, f * k); bloomBoost = Math.max(bloomBoost, b * k);
+  if (at) flashLight.position.copy(at);
+}
+const VOL_VERT = /* glsl */`
+  varying vec2 vUv; varying vec3 vN, vV;
+  void main(){ vUv = uv; vec4 mv = modelViewMatrix*vec4(position,1.0); vV = -mv.xyz; vN = normalize(normalMatrix*normal); gl_Position = projectionMatrix*mv; }`;
+
+// ---- beam：天光坠落。一根真的圆柱（不是转向镜头的面片），按视线和表面的夹角算出中间亮、边缘柔，绕着看都是立体的光柱
+const beamGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 1, true); beamGeo.translate(0, -0.5, 0);   // 顶端在原点，往下长
+const beams = Array.from({ length: 6 }, () => {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uTime: shared.uTime, uAge: { value: 9 }, uCol: { value: new THREE.Color() }, uPow: { value: 1 } },
+    vertexShader: VOL_VERT,
+    fragmentShader: /* glsl */`
+      uniform float uTime, uAge, uPow; uniform vec3 uCol; varying vec2 vUv; varying vec3 vN, vV;
+      void main(){
+        float down = 1.0 - vUv.y;                                          // 0 塔顶 → 1 落点
+        float reach = clamp(uAge / 0.12, 0.0, 1.0);                        // 0.12 秒从塔顶劈到落点
+        if (down > reach) discard;
+        float facing = abs(dot(normalize(vN), normalize(vV)));             // 1：正对视线（柱子中线），0：轮廓
+        float life = uAge < 0.12 ? 1.0 : exp(-(uAge - 0.12) * 4.5);
+        float thin = mix(1.0, 0.3, clamp((uAge - 0.12) / 0.45, 0.0, 1.0));  // 劈下来时粗，之后收成一根细线
+        float x = sqrt(max(0.0, 1.0 - facing*facing)) / thin;              // 离柱子中线多远（0..1）
+        float core = exp(-x*x*40.0), body = exp(-x*x*4.0);
+        float streak = 0.75 + 0.25*sin(down*90.0 - uTime*70.0);
+        float hd = (reach - down) * 25.0, head = exp(-hd * hd) * (1.0 - step(1.0, reach) * 0.7);
+        float a = clamp((body*0.6 + core + head) * life * smoothstep(0.0, 0.1, down) * uPow, 0.0, 1.0);
+        gl_FragColor = vec4(mix(uCol, vec3(1.0), core) * (body*1.1 + core*3.0 + head*3.0) * streak * a, 1.0);
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const m = new THREE.Mesh(beamGeo, mat); m.visible = false; m.frustumCulled = false; m.renderOrder = 3; scene.add(m);
+  return { m, mat, t0: -100, landed: true, at: new THREE.Vector3(), w: 1, col: FX_COL.blue, v: 1, size: 1 };
+});
+let beamNext = 0;
+function fxBeam({ v = 1, p = 0.5, at = null, col = null } = {}) {
+  const b = beams[beamNext], st = pitchStyle(p); beamNext = (beamNext + 1) % beams.length;
+  b.at.copy(at ?? fxPoint(1, st.y - 1, st.y + 1)); b.t0 = time; b.landed = false; b.v = v; b.col = col ?? st.col; b.size = st.size;
+  b.w = (0.45 + 0.75 * v) * st.size;
+  b.mat.uniforms.uCol.value.setRGB(...b.col); b.mat.uniforms.uPow.value = 0.5 + 0.5 * v;
+}
+function updateBeams(t) {
+  const topY = camera.position.y + TOP_OFF - 2;
+  for (const b of beams) {
+    const age = t - b.t0;
+    b.m.visible = age >= 0 && age < 1.0;
+    if (!b.m.visible) continue;
+    b.m.position.set(b.at.x, topY, b.at.z); b.m.scale.set(b.w, topY - b.at.y, b.w);
+    b.mat.uniforms.uAge.value = age;
+    if (!b.landed && age >= 0.12) {
+      b.landed = true;
+      startWave(b.at.y, (1.8 + 2.6 * b.v) * b.size, b.col, b.at.x, b.at.z, 0.9);
+      spawnBurst(b.at, b.col, (0.5 + 0.8 * b.v) * b.size, 0);
+      hit({ flash: 0.22 * b.v, bloom: 0.1 * b.v, res: 0.4 * b.v, at: b.at });
+    }
+  }
+}
+
+// ---- sigil：法阵。平铺在天井里（不再正对镜头），三层叠成一座小塔：顶上小、底下大，从上往下一层层描出来、
+// 相邻两层反着转；低音落在镜头下面（俯看），高音悬在镜头上面（仰看），透视一眼就看得出深浅
+const runeTex = new THREE.CanvasTexture(makeRuneCanvas(77, true));
+runeTex.wrapS = THREE.RepeatWrapping; runeTex.magFilter = runeTex.minFilter = THREE.NearestFilter; runeTex.generateMipmaps = false;
+const sigilGeo = new THREE.PlaneGeometry(2, 2); sigilGeo.rotateX(-Math.PI / 2);
+const SIGIL_LAYERS = [{ dy: 1.7, r: 0.36, delay: 0, spin: 1 }, { dy: 0.85, r: 0.62, delay: 0.07, spin: -1 }, { dy: 0, r: 1, delay: 0.14, spin: 1 }];
+const sigilMat = () => new THREE.ShaderMaterial({
+  uniforms: { uAge: { value: 9 }, uSpin: { value: 0 }, uPow: { value: 1 }, uCol: { value: new THREE.Color() }, tRune: { value: runeTex } },
+  vertexShader: UV_VERT,
   fragmentShader: /* glsl */`
-    uniform float uAlpha; uniform vec3 uColor; varying vec2 vUv;
-    void main(){ float r = length(vUv - 0.5)*2.0; float a = exp(-pow((r - 0.85)*9.0, 2.0)) + exp(-pow((r - 0.6)*14.0, 2.0))*0.4 + exp(-pow((r - 0.35)*10.0, 2.0))*0.15; gl_FragColor = vec4(uColor*a*uAlpha*2.0, 1.0); }`,
+    uniform sampler2D tRune; uniform float uAge, uSpin, uPow; uniform vec3 uCol; varying vec2 vUv;
+    float line(float d, float w){ return exp(-d*d/(w*w)); }
+    void main(){
+      if (uAge < 0.0) discard;
+      vec2 p = (vUv - 0.5) * 2.0;
+      float r = length(p);
+      if (r > 1.04) discard;
+      float a = atan(p.y, p.x);
+      float drawn = step(fract((a + uSpin) / 6.28318), smoothstep(0.0, 0.14, uAge));   // 沿圆周描出来
+      float s = line(r - 0.97, 0.016) + line(r - 0.80, 0.012) + line(r - 0.46, 0.012);
+      vec2 ruv = vec2((a + uSpin) / 6.28318 * 4.0, (r - 0.82) / 0.13);
+      if (ruv.y > 0.0 && ruv.y < 1.0) s += texture2D(tRune, ruv).r * 0.9;
+      for (int k = 0; k < 6; k++) {
+        float th = -uSpin * 0.6 + float(k) * 1.0472;
+        s += line(abs(dot(p, vec2(cos(th), sin(th))) - 0.40), 0.012) * step(r, 0.8);
+      }
+      s += line(r - 0.62, 0.035) * pow(max(0.0, 0.5 + 0.5*cos((a - uSpin*1.5) * 12.0)), 30.0) * 1.5;
+      float pop = exp(-uAge * 7.0);                                     // 出现那一下最亮
+      float fade = 1.0 - smoothstep(0.42, 0.72, uAge);
+      float al = s * drawn * fade * uPow * (1.0 + pop * 1.5);
+      gl_FragColor = vec4(mix(uCol, vec3(1.0), clamp(s - 0.8, 0.0, 1.0) * 0.6 + pop * 0.4) * al, 1.0);
+    }`,
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
 });
-const wave = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), waveMat);
-wave.rotation.x = -Math.PI / 2; wave.visible = false;
-scene.add(wave);
+const sigils = Array.from({ length: 4 }, () => {
+  const layers = SIGIL_LAYERS.map(() => {
+    const mat = sigilMat();
+    const m = new THREE.Mesh(sigilGeo, mat); m.visible = false; m.frustumCulled = false; m.renderOrder = 3; scene.add(m);
+    return { m, mat };
+  });
+  return { layers, t0: -100, R: 3, seed: 0, broke: true, col: FX_COL.blue, v: 1, at: new THREE.Vector3() };
+});
+let sigilNext = 0;
+function fxSigil({ v = 1, p = 0.5, at = null, col = null } = {}) {
+  const g = sigils[sigilNext], st = pitchStyle(p); sigilNext = (sigilNext + 1) % sigils.length;
+  const th = rand(0, Math.PI * 2), off = rand(0, 1.0);
+  g.at.copy(at ?? new THREE.Vector3(off * Math.cos(th), camera.position.y + st.y + rand(-0.5, 0.5), off * Math.sin(th)));
+  g.t0 = time; g.broke = false; g.v = v; g.seed = rand(0, 6.28); g.col = col ?? st.col;
+  g.R = Math.min(4.3 - off, 3.3 * st.size * (0.85 + 0.15 * v));
+  for (const L of g.layers) { L.mat.uniforms.uCol.value.setRGB(...g.col); L.mat.uniforms.uPow.value = 0.45 + 0.4 * v; }
+}
+function updateSigils(t) {
+  for (const g of sigils) {
+    const age = t - g.t0;
+    const on = age >= 0 && age < 0.95;
+    g.layers.forEach((L, i) => {
+      const S = SIGIL_LAYERS[i], a = age - S.delay;
+      L.m.visible = on && a >= 0;
+      if (!L.m.visible) return;
+      L.m.position.set(g.at.x, g.at.y + S.dy * (g.R / 3.3), g.at.z);
+      L.m.scale.setScalar(g.R * S.r * (0.8 + 0.2 * easeOut(Math.min(1, a / 0.14))));
+      L.mat.uniforms.uAge.value = a; L.mat.uniforms.uSpin.value = (g.seed + a * 2.2) * S.spin;
+    });
+    if (on && !g.broke && age >= 0.56) {          // 底层法阵碎开：光屑从圆周上落下来
+      g.broke = true;
+      for (let k = 0; k < 6; k++) spawnBurst(tmpF.set(g.at.x + g.R * Math.cos(k * 1.047 + g.seed), g.at.y, g.at.z + g.R * Math.sin(k * 1.047 + g.seed)), g.col, 0.35, 0);
+    }
+  }
+}
+
+// ---- glitter：十字星芒（一簇 40 个，各自错开一点点时间闪一下）
+const G_N = 8, G_PER = 40;
+const gO = Array.from({ length: G_N }, () => new THREE.Vector3()), gT = new Array(G_N).fill(-100);
+const gC = Array.from({ length: G_N }, () => new THREE.Vector3(1, 1, 1)), gS = new Array(G_N).fill(1);
+let gNext = 0;
+{
+  const N = G_N * G_PER, idx = new Float32Array(N), dir = new Float32Array(N * 3), rnd = new Float32Array(N), v = new THREE.Vector3();
+  for (let i = 0; i < N; i++) {
+    idx[i] = Math.floor(i / G_PER);
+    v.randomDirection().multiplyScalar(Math.cbrt(Math.random()));
+    dir.set([v.x, v.y * 0.7, v.z], i * 3); rnd[i] = Math.random();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+  g.setAttribute('aG', new THREE.BufferAttribute(idx, 1));
+  g.setAttribute('aDir', new THREE.BufferAttribute(dir, 3));
+  g.setAttribute('aRand', new THREE.BufferAttribute(rnd, 1));
+  const glitter = new THREE.Points(g, pointsMaterial(COMMON_GLSL + /* glsl */`
+    attribute float aG; attribute vec3 aDir; attribute float aRand;
+    uniform vec3 uGO[${G_N}]; uniform float uGT[${G_N}]; uniform vec3 uGC[${G_N}]; uniform float uGS[${G_N}];
+    varying vec3 vColor; varying float vAlpha;
+    void main(){
+      int gi = int(aG + 0.5);
+      float age = uTime - uGT[gi] - aRand*0.14, dur = 0.28 + aRand*0.22;
+      if (age < 0.0 || age > dur) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; vColor = vec3(0.0); return; }
+      float k = age / dur, env = sin(k * 3.14159);
+      vec4 mv = viewMatrix*vec4(uGO[gi] + aDir*uGS[gi]*(0.9 + 0.3*k), 1.0);
+      gl_Position = projectionMatrix*mv;
+      vColor = mix(vec3(1.0), uGC[gi], 0.45) * 2.6;
+      vAlpha = env * fogF(-mv.z);
+      gl_PointSize = max(2.0, pxSize((0.18 + 0.2*aRand) * env * sqrt(uGS[gi]), -mv.z));
+    }`, /* glsl */`
+    varying vec3 vColor; varying float vAlpha;
+    void main(){
+      vec2 c = abs(gl_PointCoord - 0.5);
+      float a = exp(-c.x*42.0)*exp(-c.y*6.0) + exp(-c.y*42.0)*exp(-c.x*6.0) + exp(-dot(c,c)*90.0);
+      a *= vAlpha;
+      if (a < 0.004) discard;
+      gl_FragColor = vec4(vColor, a);
+    }`, { uGO: { value: gO }, uGT: { value: gT }, uGC: { value: gC }, uGS: { value: gS } }));
+  glitter.frustumCulled = false;
+  scene.add(glitter); fxObjects.push(glitter);
+}
+function fxGlitter({ v = 1, p = 0.5, at = null, col = null } = {}) {
+  const i = gNext, st = pitchStyle(p); gNext = (gNext + 1) % G_N;
+  gO[i].copy(at ?? fxPoint(1.3, st.y - 1, st.y + 2)); gT[i] = time; gS[i] = (0.7 + 0.9 * v) * st.size; gC[i].set(...(col ?? st.col));
+}
+
+// ---- ripple：一圈符文光环贴着书墙从下往上扫过（镜头在圈里，所以看到的是整面书墙被一道光扫过）。低音扫得慢、光带宽
+const rippleGeo = new THREE.CylinderGeometry(8.3, 8.3, 1, 96, 1, true);
+const ripples = Array.from({ length: 4 }, () => {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uAlpha: { value: 0 }, uCol: { value: new THREE.Color() }, tRune: { value: runeTex } },
+    vertexShader: UV_VERT,
+    fragmentShader: /* glsl */`
+      uniform float uAlpha; uniform vec3 uCol; uniform sampler2D tRune; varying vec2 vUv;
+      void main(){
+        float y = clamp(vUv.y, 0.0, 1.0), e = (y - 0.9) * 18.0;
+        float edge = exp(-e * e);                                       // 上沿一道亮线
+        float tail = y * y * y * 0.35;                                  // 往下拖一截淡光
+        float rune = y > 0.45 && y < 0.8 ? texture2D(tRune, vec2(vUv.x * 18.0, (y - 0.45) / 0.35)).r * 0.6 : 0.0;
+        float a = (edge + tail + rune) * uAlpha;
+        gl_FragColor = vec4(mix(uCol, vec3(1.0), edge * 0.5) * a * 1.6, 1.0);
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const m = new THREE.Mesh(rippleGeo, mat); m.visible = false; m.frustumCulled = false; scene.add(m);
+  return { m, mat, t0: -100, v: 1, y0: 0, dur: 1.6, h: 1.4 };
+});
+let rippleNext = 0;
+function fxRipple({ v = 1, p = 0.5, col = null } = {}) {
+  const r = ripples[rippleNext], st = pitchStyle(p); rippleNext = (rippleNext + 1) % ripples.length;
+  r.t0 = time; r.v = v; r.y0 = camera.position.y - 6; r.dur = 1.6 / st.speed; r.h = 1.4 * st.size;
+  r.mat.uniforms.uCol.value.setRGB(...(col ?? st.col));
+}
+function updateRipples(t) {
+  for (const r of ripples) {
+    const k = (t - r.t0) / r.dur;
+    r.m.visible = k >= 0 && k < 1;
+    if (!r.m.visible) continue;
+    r.m.position.set(0, r.y0 + (k * k * (3 - 2 * k)) * 22, 0); r.m.scale.set(1, r.h, 1);
+    r.mat.uniforms.uAlpha.value = Math.sin(Math.PI * k) * (0.5 + 0.5 * r.v);
+  }
+}
+
+// ---- aurora：极光。一个音符一条丝带（最多 6 条同时）：
+//   起音：丝带沿着自己的长度「长」出来（低音长得慢）；按住：保持亮度、轻轻呼吸；
+//   松开：从尾巴往前收、一边往上飘一边淡掉（低音收得慢）。
+//   和弦里每个音按音高分开：低音在下、圈大、帘子高、偏蓝紫，高音在上、圈小、偏青金；相邻两条反着转。
+//   同时亮的条数越多，每条越暗一点（1/√n），和弦不会叠成一片白。
+const AUR_N = 6, AUR_SEG = 220;
+const ribbonGeo = (() => {
+  const s = new Float32Array((AUR_SEG + 1) * 2), j = new Float32Array((AUR_SEG + 1) * 2), index = [];
+  for (let i = 0; i <= AUR_SEG; i++) {
+    s.set([i / AUR_SEG, i / AUR_SEG], i * 2); j.set([0, 1], i * 2);
+    if (i < AUR_SEG) index.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array((AUR_SEG + 1) * 2 * 3), 3));
+  g.setAttribute('aS', new THREE.BufferAttribute(s, 1)); g.setAttribute('aJ', new THREE.BufferAttribute(j, 1)); g.setIndex(index);
+  return g;
+})();
+const auroras = Array.from({ length: AUR_N }, (_, i) => {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: shared.uTime, uAmp: { value: 0 }, uGrow: { value: 0 }, uRet: { value: 0 }, uC1: { value: new THREE.Color() }, uC2: { value: new THREE.Color() },
+      uR: { value: 3.3 }, uH: { value: 2.8 }, uSpan: { value: 18 }, uTurns: { value: 1.6 }, uDir: { value: 1 }, uPh: { value: 0 },
+    },
+    vertexShader: /* glsl */`
+      attribute float aS; attribute float aJ;
+      uniform float uR, uH, uSpan, uTurns, uDir, uPh;
+      varying vec2 vUv;
+      void main(){
+        float th = uDir*aS*6.28318*uTurns + uPh, R = uR + 0.35*sin(aS*9.0 + uPh*3.0);
+        vUv = vec2(aS, aJ);
+        gl_Position = projectionMatrix*modelViewMatrix*vec4(R*cos(th), aS*uSpan + aJ*uH, R*sin(th), 1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      uniform float uTime, uAmp, uGrow, uRet, uDir; uniform vec3 uC1, uC2; varying vec2 vUv;
+      void main(){
+        float s = vUv.x, v = clamp(vUv.y, 0.0, 1.0);
+        float grown = 1.0 - smoothstep(uGrow - 0.12, uGrow, s);           // 起音：只有已经长出来的那段
+        float kept = smoothstep(uRet, uRet + 0.15, s);                     // 松开：从尾巴往前收
+        float flow = 0.5 + 0.5*sin(s*55.0 - uTime*1.6*uDir + sin(s*13.0 + uTime*0.7)*2.0);
+        float curtain = smoothstep(0.0, 0.1, v) * pow(1.0 - v, 1.7);       // 下沿亮、往上淡
+        float rays = 0.78 + 0.22*sin(s*480.0 + uTime*2.5);
+        float ends = smoothstep(0.0, 0.06, s) * (1.0 - smoothstep(0.9, 1.0, s));
+        float gs = (uGrow - s) * 14.0, tip = exp(-gs * gs) * (1.0 - step(1.0, uGrow)) * 0.8;   // 正在长的那一头亮一点
+        float a = curtain * rays * (0.35 + 0.65*flow) * ends * grown * kept * uAmp * (1.0 + tip);
+        gl_FragColor = vec4(mix(uC1, uC2, v + 0.3*flow) * a * 1.1, 1.0);
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const m = new THREE.Mesh(ribbonGeo, mat); m.frustumCulled = false; m.visible = false; scene.add(m);
+  return { m, mat, on: false, t0: 0, end: 0, v: 1, p: 0.5, att: 0.6, rel: 1.4, spin: 0.1, y0: 0, i };
+});
+let aurDir = 1;
+/** 一个音符一条丝带；d 是按住多久（秒），默认 4 秒 */
+function fxAurora({ v = 1, p = 0.5, d = 0 } = {}) {
+  const a = auroras.find((x) => !x.on) ?? auroras.reduce((x, y) => (x.end < y.end ? x : y));   // 没有空的就顶掉最早松开的那条
+  const st = pitchStyle(p), u = a.mat.uniforms;
+  Object.assign(a, { on: true, t0: time, end: time + (d > 0 ? d : 4), v, p, att: lerp(0.9, 0.45, p), rel: lerp(1.8, 1.0, p), spin: lerp(0.07, 0.18, p) * (aurDir = -aurDir) });
+  a.y0 = camera.position.y - 8 + p * 8;
+  u.uR.value = lerp(3.4, 2.2, p); u.uH.value = lerp(2.4, 1.4, p); u.uTurns.value = lerp(1.2, 2.0, p); u.uDir.value = aurDir; u.uPh.value = rand(0, 6.28);
+  u.uC1.value.setRGB(...st.col); u.uC2.value.setRGB(...pitchCol(Math.min(1, p + 0.3)));
+}
+function updateAurora(t) {
+  const n = auroras.filter((a) => a.on).length, norm = Math.min(1, 1 / Math.sqrt(Math.max(1, n)));
+  for (const a of auroras) {
+    a.m.visible = a.on;
+    if (!a.on) continue;
+    const u = a.mat.uniforms, ret = Math.max(0, (t - a.end) / a.rel);
+    if (ret >= 1) { a.on = false; a.m.visible = false; continue; }
+    u.uGrow.value = easeOut(Math.min(1, (t - a.t0) / a.att)) * 1.12;      // 长到头再多一点，让前沿完全出来
+    u.uRet.value = ret * 1.15;
+    u.uAmp.value = a.v * norm * (0.9 + 0.1 * Math.sin(t * 1.3 + a.i)) * Math.pow(1 - ret, 0.7);
+    a.m.position.set(0, a.y0 + ret * 2.0, 0);                             // 松开后一边收一边往上飘
+    a.m.rotation.y = (t - a.t0) * a.spin;
+  }
+}
+
+// ---- chime：一点光沿栏杆往前跑，路过的灯一盏盏迸亮（音越高跑得越远、越快、越暖）
+const chimeTrails = makeTrails(4, 26, 0.13, 0.02, 2.4);
+scene.add(chimeTrails.points); fxObjects.push(chimeTrails.points);
+const chimes = Array.from({ length: 4 }, () => {
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: softWhite, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  glow.scale.setScalar(0.7); glow.visible = false; scene.add(glow); fxObjects.push(glow);
+  return { glow, t0: -100, s0: 0, span: 16, col: FX_COL.gold, sPrev: 0, on: false, dur: 0.9, v: 1 };
+});
+let chimeNext = 0;
+const railPoint = (s, out) => out.copy(polar(R_RAIL, s * DTH, railY(s) + 0.55));
+function fxChime({ v = 1, p = 0.5, col = null } = {}) {
+  const i = chimeNext, c = chimes[i]; chimeNext = (chimeNext + 1) % chimes.length;
+  c.t0 = time; c.s0 = progress + 1; c.span = 12 + 14 * p; c.sPrev = c.s0; c.on = true; c.v = v; c.dur = 0.9 / pitchStyle(p).speed;
+  c.col = col ?? pitchCol(p);
+  chimeTrails.cols[i] = c.col; chimeTrails.hist[i].length = 0;
+  c.glow.material.color.setRGB(c.col[0] * 3, c.col[1] * 3, c.col[2] * 3);
+}
+function updateChimes(t) {
+  chimes.forEach((c, i) => {
+    if (!c.on) return;
+    const k = (t - c.t0) / c.dur;
+    if (k > 1.5) { c.on = false; c.glow.visible = false; chimeTrails.hist[i].length = 0; return; }
+    const s = c.s0 + c.span * easeOut(Math.min(1, k));
+    railPoint(s, tmpF);
+    c.glow.visible = k < 1; c.glow.position.copy(tmpF);
+    chimeTrails.push(i, tmpF);
+    for (let j = Math.ceil((c.sPrev - 4.5) / 8); lampK(j) + 0.5 <= s; j++) if (lampK(j) + 0.5 > c.sPrev) spawnBurst(lampPos(j), c.col, 0.3 + 0.3 * c.v, 0);
+    c.sPrev = s;
+  });
+  chimeTrails.flush();
+}
 
 /* ============================================================
  * 后期：泛光 → 色调映射 → HD-2D（移轴 + 冷暗暖亮 + 暗角）
@@ -2135,7 +2504,7 @@ const clock = new THREE.Clock();
 const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3(), camRight = new THREE.Vector3(), camUp = new THREE.Vector3(), prevKn = new THREE.Vector3();
 const mBook = new THREE.Matrix4(), mPart = new THREE.Matrix4(), mOut = new THREE.Matrix4(), vScale = new THREE.Vector3();
 const dummy = new THREE.Object3D();
-let nextEvent = 4, ev = null, evType = 0, shake = 0, bloomBoost = 0, flash = 0, resonance = 0, lastFrame = -1;
+let nextEvent = 4, ev = null, shake = 0, bloomBoost = 0, flash = 0, resonance = 0, lastFrame = -1;
 
 function stairTop(s) {
   const k = Math.floor(s), f = s - k;
@@ -2244,18 +2613,73 @@ function updateWell(t, camY) {
   cometTrails.flush();
 }
 
-// 天井里的大型魔法事件，轮流上演，骑士照常走路：
-//   sword  —— 一柄光之巨剑在井中显形、劈落，冲击波横扫天井
-//   shower —— 星辉仪一口气朝四面书墙射出一串彗星
-//   pulse  —— 星辉仪先吸光、再爆开一圈横贯塔身的脉冲
+// 天井里的大型魔法事件，骑士照常走路：
+//   sword  —— 一柄光之巨剑在井中显形、劈落，冲击波横扫天井（slash）
+//   shower —— 星辉仪一口气朝四面书墙射出一串彗星（shower）
+//   pulse  —— 星辉仪先吸光、再爆开一圈横贯塔身的脉冲（swell）
 // 骑士的剑会和这些事件「共鸣」：剑光变亮、碎屑变多。
-const EVENT_TYPES = ['sword', 'shower', 'pulse'];
-let ringFlare = 0, armPulse = 0, waveState = null;
-function startWave(y, r, col) { waveState = { t0: time, y, r, col }; }
-function endEvent(t) { ev = null; nextEvent = t + rand(5.5, 8.5); }
+// 没有乐谱时（屏保平时就是这样）每 5.5–8.5 秒轮流上演一段：三个大事件，和用乐器特效编的三小段。
+const AMBIENT = ['sword', 'beams', 'shower', 'sigils', 'pulse', 'aurora'];
+const PHRASES = {
+  beams: [[0, 'beam', { v: 1 }], [0.2, 'glitter', { v: 0.6 }], [0.45, 'beam', { v: 0.65, p: 0.2 }], [0.9, 'beam', { v: 0.65, p: 0.8 }], [1.6, 'beam', { v: 1, p: 0.5 }]],
+  sigils: [[0, 'sigil', { v: 0.8 }], [0.5, 'sigil', { v: 0.8, p: 0.8 }], [0.55, 'glitter'], [1.0, 'sigil', { v: 1 }], [1.3, 'ripple', { v: 0.8 }]],
+  aurora: [[0, 'aurora', { d: 6 }], [0.8, 'chime', { p: 0.3 }], [2.4, 'chime', { p: 0.8 }], [4, 'ripple', { v: 0.6 }]],
+};
+let ringFlare = 0, armPulse = 0, ambientI = 0;
+const pendingFx = [];                     // 排着队等打的特效 [时刻, 名字, 参数]
+let scoreRun = null, gallery = null;
+function startEvent(type) { ev = { t0: time, type, n: 0 }; }
+function endEvent(t) { ev = null; nextEvent = Math.max(nextEvent, t + rand(5.5, 8.5)); }
+function queueFx(list, t0 = time) { for (const [dt, name, o] of list) pendingFx.push([t0 + dt, name, o]); }
+/** 打一个特效。name 见 FX_NAMES；o = { v 力度 0..1, p 音高 0..1, d 时值秒 } */
+function triggerFx(name, o = {}) {
+  const camY = camera.position.y;
+  switch (name) {
+    case 'beam': return fxBeam(o);
+    case 'sigil': return fxSigil(o);
+    case 'glitter': return fxGlitter(o);
+    case 'ripple': return fxRipple(o);
+    case 'aurora': return fxAurora(o);
+    case 'chime': return fxChime(o);
+    case 'comet': return spawnComet(camY, null, o.p ?? Math.random());
+    case 'swell': return startEvent('pulse');
+    case 'slash': return startEvent('sword');
+    case 'shower': return startEvent('shower');
+  }
+}
+/** 按乐谱打特效（乐谱格式见 src/score.js）；delay 秒后从第 0 拍开始 */
+function playScore(score, delay = 0) { scoreRun = { cursor: makeCursor(compileScore(score)), t0: time + delay }; gallery = null; }
+function stopScore() { scoreRun = null; }
+/** 演示：每种特效轮流放一遍（onName(name) 告诉页面现在放的是哪个） */
+const GALLERY = {      // 每种都从低音走到高音，看得出音高怎么变；极光是三个音错开起止的和弦
+  beam: [[0, { v: 1, p: 0 }], [0.6, { v: 0.9, p: 0.33 }], [1.2, { v: 0.9, p: 0.66 }], [1.8, { v: 1, p: 1 }]],
+  sigil: [[0, { v: 1, p: 0.05 }], [1.0, { v: 0.9, p: 0.5 }], [2.0, { v: 0.9, p: 0.95 }]],
+  glitter: [0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((x, i) => [x, { v: 0.8, p: i / 8 }]),
+  ripple: [[0, { v: 1, p: 0.1 }], [1.6, { v: 0.8, p: 0.9 }]],
+  aurora: [[0, { v: 1, p: 0.15, d: 4.6 }], [0.8, { v: 1, p: 0.5, d: 3.0 }], [1.6, { v: 1, p: 0.9, d: 1.6 }]],
+  comet: [[0, { p: 0.0 }], [0.45, { p: 0.33 }], [0.9, { p: 0.66 }], [1.35, { p: 1 }]],
+  chime: [[0, { p: 0.1 }], [1.1, { p: 0.9 }]],
+  swell: [[0, {}]], slash: [[0, {}]], shower: [[0, {}]],
+};
+function playGallery(onName) { gallery = { next: time + 0.5, i: 0, onName }; scoreRun = null; }
+
 function updateEvents(t, camY) {
   blade.visible = false; slashArc.visible = false; swordTipGlow.visible = false;
-  if (!ev && t >= nextEvent && mode === 'run') ev = { t0: t, type: EVENT_TYPES[evType++ % EVENT_TYPES.length], n: 0 };
+  if (mode === 'run') {
+    if (scoreRun) for (const c of scoreRun.cursor.advance(t - scoreRun.t0)) triggerFx(c.fx, c);
+    else if (gallery) {
+      if (t >= gallery.next) {
+        const name = FX_NAMES[gallery.i++ % FX_NAMES.length];
+        gallery.onName?.(name);
+        queueFx(GALLERY[name].map(([dt, o]) => [dt, name, o]), t);
+        gallery.next = t + (name === 'aurora' ? 7.5 : 3.4);
+      }
+    } else if (!ev && t >= nextEvent) {
+      const a = AMBIENT[ambientI++ % AMBIENT.length];
+      if (PHRASES[a]) { queueFx(PHRASES[a], t); nextEvent = t + rand(5.5, 8.5); } else startEvent(a);
+    }
+  }
+  for (let i = pendingFx.length - 1; i >= 0; i--) if (pendingFx[i][0] <= t) { const [, name, o] = pendingFx.splice(i, 1)[0]; triggerFx(name, o); }
   if (ev) {
     const e = t - ev.t0;
     if (ev.type === 'sword') {
@@ -2270,19 +2694,18 @@ function updateEvents(t, camY) {
         slashArc.visible = true; slashArc.position.copy(pivot); slashArc.quaternion.copy(camera.quaternion); slashArc.scale.setScalar(L / 5);
         arcMat.uniforms.uA0.value = A0 + Math.PI / 2; arcMat.uniforms.uA1.value = a + Math.PI / 2; arcMat.uniforms.uAlpha.value = fade;
       }
-      if (ev.n === 0 && e > 0.1) { ev.n = 1; spawnBurst(pivot.clone().addScaledVector(dir, L * 0.8), [0.5, 0.8, 1.0], 2.2, 1); resonance = Math.max(resonance, 0.8); }
+      if (ev.n === 0 && e > 0.1) { ev.n = 1; spawnBurst(pivot.clone().addScaledVector(dir, L * 0.8), [0.5, 0.8, 1.0], 2.2, 1); hit({ res: 0.8 }); }
       if (ev.n === 1 && k >= 1) {
         ev.n = 2;
         for (const f of [0.35, 0.65, 0.95]) spawnBurst(pivot.clone().addScaledVector(dir, L * f), f > 0.9 ? [0.9, 0.95, 1.0] : [0.35, 0.7, 1.0], 1.2 + f * 1.6, 0);
         startWave(camY + 3.5, 5.6, [0.45, 0.8, 1.0]);
-        flashLight.position.copy(pivot).addScaledVector(dir, L * 0.9);
-        flash = 0.55; shake = 0.1; bloomBoost = 0.3; resonance = 1.6; ringFlare = 1;
+        hit({ flash: 0.55, shake: 0.1, bloom: 0.3, res: 1.6, ring: 1, at: pivot.clone().addScaledVector(dir, L * 0.9) });
       }
       if (e > 2.7) endEvent(t);
     } else if (ev.type === 'shower') {
       armPulse = Math.max(armPulse, Math.min(1, e * 2));
       if (e < 1.7 && e > ev.n * 0.17) { ev.n++; spawnComet(camY, armillary.position); }
-      if (ev.n === 3) resonance = Math.max(resonance, 0.8);
+      if (ev.n === 3) hit({ res: 0.8 });
       if (e > 2.3) endEvent(t);
     } else {
       if (ev.n === 0) { ev.n = 1; spawnBurst(armillary.position, [0.6, 0.85, 1.0], 3.0, 1); spawnBurst(armillary.position, [1.0, 0.85, 0.5], 2.0, 1); }
@@ -2291,18 +2714,12 @@ function updateEvents(t, camY) {
         ev.n = 2;
         spawnBurst(armillary.position, [0.45, 0.8, 1.0], 3.4, 0); spawnBurst(armillary.position, [1.0, 0.85, 0.5], 2.4, 0);
         startWave(armillary.position.y, 11, [0.65, 0.85, 1.0]);
-        flashLight.position.copy(armillary.position); flash = 0.6; bloomBoost = 0.3; ringFlare = 1.3; armPulse = 1.6; resonance = 1.2;
+        hit({ flash: 0.6, bloom: 0.3, ring: 1.3, arm: 1.6, res: 1.2, at: armillary.position });
       }
       if (e > 2.6) endEvent(t);
     }
   }
-  if (waveState) {
-    const w = (t - waveState.t0) / 1.25;
-    if (w < 1) {
-      wave.visible = true; wave.position.set(0, waveState.y, 0); wave.scale.setScalar(0.5 + easeOut(w) * waveState.r);
-      waveMat.uniforms.uAlpha.value = 1 - w; waveMat.uniforms.uColor.value.setRGB(...waveState.col);
-    } else { wave.visible = false; waveState = null; }
-  } else wave.visible = false;
+  updateWaves(t); updateBeams(t); updateSigils(t); updateRipples(t); updateAurora(t); updateChimes(t);
 }
 
 function update(dt) {
@@ -2318,7 +2735,6 @@ function update(dt) {
   prevKn.copy(knight.position);
   knight.position.copy(polar(R_WALK, knTh, stairTop(knS)));
   shadow.position.copy(polar(R_WALK, knTh, (Math.floor(knS) + 1) * RISE + 0.02));
-  knightU.value.copy(knight.position);
 
   if (!freeCam) {
     camera.position.copy(polar(CAM.r, camS * DTH, camS * RISE + RISE + CAM.h + Math.sin(time * 0.5) * 0.05));
@@ -2853,6 +3269,8 @@ export const magicTower = {
     clock.getDelta();
     renderer.setAnimationLoop(loop);
   },
+  /** 乐器特效：trigger(name, { v, p, d }) 打一个；play(score) 按乐谱打（格式见 src/score.js）；gallery(onName) 每种轮流放一遍 */
+  fx: { names: FX_NAMES, trigger: triggerFx, play: playScore, stop: stopScore, gallery: playGallery },
   /** 调试：不靠 requestAnimationFrame 往前推 sec 秒（只在最后画一帧） */
   simulate(sec, fps = 30) {
     for (let i = 0; i < sec * fps; i++) { frame(1 / fps, false); for (const f of frameHooks) f(1 / fps); }
