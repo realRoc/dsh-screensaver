@@ -9,7 +9,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { buildStudy } from './study.js';
-import { compileScore, FX_NAMES, makeCursor, normPitch } from './score.js';
+import { compileScore, FX_NAMES, makeCursor, normPitch, sectionAt } from './score.js';
 import KN_META from '../assets/knight.json';
 import walkIndex from '../assets/knight_walk_index.png';
 import walkNormal from '../assets/knight_walk_normal.png';
@@ -1441,6 +1441,7 @@ scene.add(new THREE.HemisphereLight(0x7090c0, 0x2a2018, 0.95));
 const CANDLE_LIGHTS = 4, LAMP_LIGHTS = 2;
 const candleLights = Array.from({ length: CANDLE_LIGHTS }, () => { const l = new THREE.PointLight(0xff9a4a, 0, 0, 2); scene.add(l); return l; });
 const lampLights = Array.from({ length: LAMP_LIGHTS }, () => { const l = new THREE.PointLight(0x9ad0ff, 0, 0, 2); scene.add(l); return l; });
+const LAMP_COL = new THREE.Color(0x9ad0ff), WELL_COL = new THREE.Color(0x9ad8ff), LAMP_GOLD = new THREE.Color(0xffc98a);   // 乐谱落到大调（mood gold）时灯转暖
 const wellLight = new THREE.PointLight(0x9ad8ff, 16, 0, 2); scene.add(wellLight);
 const deepLight = new THREE.PointLight(0x5a8cff, 22, 0, 2); scene.add(deepLight);
 const moonLight = new THREE.DirectionalLight(0xb4d0ff, 0.9); scene.add(moonLight, moonLight.target);   // 天顶满月往井里打的冷光   // 井底往上打的冷光，照亮台阶底面和飞书封面
@@ -2086,13 +2087,32 @@ const FX_COL = { blue: [0.45, 0.8, 1.0], gold: [1.0, 0.8, 0.42] };     // 池子
 // 音高 → 外观，所有乐器特效共用一套：
 //   低音：在塔里更低、更大更粗、更慢，深蓝紫；高音：更高、更小更细、更快，青白 → 金
 const PITCH_STOPS = [[0, [0.5, 0.32, 1.0]], [0.35, [0.38, 0.62, 1.0]], [0.65, [0.62, 0.92, 1.0]], [1, [1.0, 0.8, 0.42]]];
+// 段落状态（乐谱 sections[].mood）：骑士走多快（rate）、塔里的灯多亮（lamp）、所有特效往金色偏多少（warm）。
+// 没在放乐谱时一直是 walk，跟原来一样。
+const MOODS = {
+  calm: { rate: 0.8, lamp: 0.8, warm: 0 },     // 前奏：书页刚翻开
+  walk: { rate: 1, lamp: 1, warm: 0 },
+  climb: { rate: 1.3, lamp: 1.05, warm: 0 },    // 贝斯一级级往上走：骑士也加快上楼
+  full: { rate: 1.1, lamp: 1.12, warm: 0 },     // 副歌：塔身全亮
+  freeze: { rate: 0, lamp: 0.3, warm: 0 },     // 间奏急停：骑士停在半步上，灯暗下去，只剩钟琴和三道天光
+  gold: { rate: 1, lamp: 1.2, warm: 1 },       // 落到 D 大三（皮卡第三度）：整座塔转成金色
+};
+const moodNow = { ...MOODS.walk };
+let moodName = 'walk';
+function easeMood(dt) {
+  const m = MOODS[moodName] ?? MOODS.walk, k = 1 - Math.exp(-dt * (moodName === 'freeze' ? 14 : 2.5));   // 急停要快，回来慢慢走起来
+  for (const key in moodNow) moodNow[key] += (m[key] - moodNow[key]) * k;
+}
+const PITCH_GOLD = PITCH_STOPS[PITCH_STOPS.length - 1][1];
 function pitchCol(p) {
   p = THREE.MathUtils.clamp(p, 0, 1);
+  let c = PITCH_GOLD;
   for (let i = 1; i < PITCH_STOPS.length; i++) {
     const [p1, c1] = PITCH_STOPS[i], [p0, c0] = PITCH_STOPS[i - 1];
-    if (p <= p1) { const k = (p - p0) / (p1 - p0); return c0.map((x, j) => x + (c1[j] - x) * k); }
+    if (p <= p1) { const k = (p - p0) / (p1 - p0); c = c0.map((x, j) => x + (c1[j] - x) * k); break; }
   }
-  return PITCH_STOPS[PITCH_STOPS.length - 1][1];
+  const w = moodNow.warm * 0.75;
+  return w > 0.001 ? c.map((x, j) => x + (PITCH_GOLD[j] - x) * w) : c;
 }
 const lerp = THREE.MathUtils.lerp;
 /** y：离镜头高度的偏移；size：大小倍数；speed：快慢倍数 */
@@ -2604,7 +2624,7 @@ function updateWell(t, camY) {
   pages.instanceMatrix.needsUpdate = true;
 
   // 彗星
-  if (t >= nextComet) { spawnComet(camY); nextComet = t + rand(0.6, 1.8); }
+  if (t >= nextComet) { if (!scoreRun) spawnComet(camY); nextComet = t + rand(0.6, 1.8); }   // 放乐谱时流星只跟主旋律走
   comets.forEach((c, i) => {
     if (c.state === 0) return;
     const k = (t - c.t0) / c.dur;
@@ -2663,9 +2683,19 @@ function triggerFx(name, opts = {}) {
 }
 /** 换播放方式（乐谱 / 画廊 / 停）时先清场：排队的特效、正在演的大事件都不带进下一段 */
 function clearStage() { pendingFx.length = 0; ev = null; }
-/** 按乐谱打特效（乐谱格式见 src/score.js）；delay 秒后从第 0 拍开始。晚了 0.25 秒以上的音符直接跳过，不补打 */
-function playScore(score, delay = 0) { clearStage(); scoreRun = { cursor: makeCursor(compileScore(score), { maxLag: 0.25 }), t0: time + delay }; gallery = null; }
-function stopScore() { clearStage(); scoreRun = null; gallery = null; nextEvent = Math.max(nextEvent, time + 2); }
+/**
+ * 按乐谱打特效（乐谱格式见 src/score.js）。晚了 0.25 秒以上的音符直接跳过，不补打。
+ *   play(score, delay)              delay 秒后从第 0 拍开始，用塔自己的时钟
+ *   play(score, { clock })          跟着外面的时钟走：clock() 返回乐谱时间（秒），比如正在放的 BGM 的播放位置
+ */
+function playScore(score, opts = 0) {
+  const { delay = 0, clock = null } = typeof opts === 'number' ? { delay: opts } : (opts ?? {});
+  const compiled = compileScore(score);
+  clearStage();
+  scoreRun = { compiled, cursor: makeCursor(compiled, { maxLag: 0.25 }), t0: time + delay, clock: typeof clock === 'function' ? clock : null };
+  gallery = null;
+}
+function stopScore() { clearStage(); scoreRun = null; gallery = null; moodName = 'walk'; nextEvent = Math.max(nextEvent, time + 2); }
 /** 演示：每种特效轮流放一遍（onName(name) 告诉页面现在放的是哪个） */
 const GALLERY = {      // 每种都从低音走到高音，看得出音高怎么变；极光是三个音错开起止的和弦
   beam: [[0, { v: 1, p: 0 }], [0.6, { v: 0.9, p: 0.33 }], [1.2, { v: 0.9, p: 0.66 }], [1.8, { v: 1, p: 1 }]],
@@ -2677,7 +2707,7 @@ const GALLERY = {      // 每种都从低音走到高音，看得出音高怎么
   chime: [[0, { p: 0.1 }], [1.1, { p: 0.9 }]],
   swell: [[0, {}]], slash: [[0, {}]], shower: [[0, {}]],
 };
-function playGallery(onName) { clearStage(); gallery = { next: time + 0.5, i: 0, onName }; scoreRun = null; }
+function playGallery(onName) { clearStage(); gallery = { next: time + 0.5, i: 0, onName }; scoreRun = null; moodName = 'walk'; }
 
 function updateEvents(t, camY) {
   blade.visible = false; slashArc.visible = false; swordTipGlow.visible = false;
@@ -2686,11 +2716,14 @@ function updateEvents(t, camY) {
     // 进塔、离塔的转场里（书房里塔的时钟停着）：乐谱和画廊的时钟一起停，排队的特效作废，
     // 不然再进塔时这几秒错过的特效会在同一帧全部打出来
     pendingFx.length = 0;
-    if (scoreRun) scoreRun.t0 += dt;
+    if (scoreRun && !scoreRun.clock) scoreRun.t0 += dt;
     if (gallery) gallery.next += dt;
   } else {
-    if (scoreRun) for (const c of scoreRun.cursor.advance(t - scoreRun.t0)) triggerFx(c.fx, c);
-    else if (gallery) {
+    if (scoreRun) {
+      const st = scoreRun.clock ? scoreRun.clock() : t - scoreRun.t0;
+      for (const c of scoreRun.cursor.advance(st)) triggerFx(c.fx, c);
+      moodName = sectionAt(scoreRun.compiled, st)?.mood ?? 'walk';
+    } else if (gallery) {
       if (t >= gallery.next) {
         const name = FX_NAMES[gallery.i++ % FX_NAMES.length];
         gallery.onName?.(name);
@@ -2747,7 +2780,8 @@ function updateEvents(t, camY) {
 
 function update(dt) {
   time += dt;
-  progress += dt * SPEED;
+  easeMood(dt);
+  progress += dt * SPEED * moodNow.rate;
   const knS = progress, camS = knS - CAM.back;
   shared.uTime.value = time;
   hd2d.uniforms.uTime.value = time;
@@ -2828,7 +2862,9 @@ function update(dt) {
     l.intensity = 3.5 * w * (0.85 + 0.1 * Math.sin(time * 8 + c * 1.7) + 0.05 * Math.sin(time * 19 + c));
   });
   const lf = camS / 8, l0 = Math.floor(lf), lfr = lf - l0;
-  lampLights.forEach((l, i) => { l.position.copy(lampPos(l0 + i)); l.intensity = 4 * (i === 0 ? 1 - lfr : lfr); });
+  lampLights.forEach((l, i) => { l.position.copy(lampPos(l0 + i)); l.intensity = 4 * moodNow.lamp * (i === 0 ? 1 - lfr : lfr); l.color.copy(LAMP_COL).lerp(LAMP_GOLD, moodNow.warm); });
+  wellLight.intensity = 16 * (0.4 + 0.6 * moodNow.lamp); deepLight.intensity = 22 * (0.4 + 0.6 * moodNow.lamp);
+  wellLight.color.copy(WELL_COL).lerp(LAMP_GOLD, moodNow.warm * 0.6);
 
   updateWell(time, camera.position.y);
 
@@ -3302,7 +3338,7 @@ export const magicTower = {
     renderer.setAnimationLoop(loop);
   },
   /** 乐器特效：trigger(name, { v, p, d }) 打一个；play(score) 按乐谱打（格式见 src/score.js）；gallery(onName) 每种轮流放一遍 */
-  fx: { names: FX_NAMES, trigger: triggerFx, play: playScore, stop: stopScore, gallery: playGallery },
+  fx: { names: FX_NAMES, trigger: triggerFx, play: playScore, stop: stopScore, gallery: playGallery, get mood() { return moodName; } },
   /** 调试：不靠 requestAnimationFrame 往前推 sec 秒（只在最后画一帧） */
   simulate(sec, fps = 30) {
     for (let i = 0; i < sec * fps; i++) { frame(1 / fps, false); for (const f of frameHooks) f(1 / fps); }

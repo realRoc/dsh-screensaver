@@ -89,6 +89,28 @@ notes as beats, with optional velocity `v`, pitch `p` (0..1 or a MIDI note numbe
 `index.html#demo,fxgallery` plays every effect from low to high with its name on screen, and `index.html#demo,groove`
 plays an 8-bar demo score (`DEMO_SCORE`).
 
+A score may also list `sections` (`{ name, b, mood }`); while it plays, the tower follows the mood of the current
+section: how fast the knight climbs, how bright the lamps are and how far every effect leans towards gold (`MOODS` in
+`src/scene.js`: `calm`, `walk`, `climb`, `full`, `freeze`, `gold`). `play(score, { clock })` follows an outside clock,
+such as the playback position of an audio file, instead of the tower's own. Effects with a wind-up (`slash`, `swell`)
+start early by `FX_LEAD` seconds so the blow lands on the beat.
+
+## Original BGM: Spiral Stair
+
+[music/](music/) holds an original 80-second loop written for the climb, *Spiral Stair* (螺旋书阶): D Dorian, 120 BPM,
+a 3+3+2 rhythm and an A–D–E–F motif that climbs a step at a time. The bass rises a step per bar in the B section, the
+music stops dead in the break, and the last two bars land on D major. [music/song.mjs](music/song.mjs) is the song
+itself (chords, melody, bass and drums written as bars and beats). `node music/build.mjs` turns it into a multitrack MIDI
+file, the audio (a seamless loop and a full version with an ending) and the effect score
+(`music/out/spiral-stair.score.json`). The effect score keeps only the accents of the busy parts, so the picture builds
+with the music, and it gives each section a mood: the knight stops and the lamps dim in the break, and the tower turns
+gold on the final chord. Rendering needs `fluidsynth`, `ffmpeg` and a General MIDI SoundFont (GeneralUser GS by
+default, `SOUNDFONT=` to change); `--stems` also writes one WAV per track.
+
+`index.html#demo,bgm` plays the loop with the effects driven by the audio's playback position (click once to allow
+sound, press M to pause). If the audio cannot load, the effects play silently on the tower's clock. The screen saver
+itself plays no sound and keeps its usual effect phrases.
+
 ## Develop
 
 ```bash
@@ -98,6 +120,7 @@ npm run demo
 ```
 
 `src/scene.js` and `src/study.js` are the scene, `src/hud.js` the interface, `src/main.js` ties sessions to the scene,
-`src/score.js` turns a score into effect cues (no three.js; tested in `test/tower-score.test.js`).
+`src/score.js` turns a score into effect cues (no three.js; tested in `test/tower-score.test.js`), `music/` writes and
+renders the BGM.
 
 CC BY-NC-SA 4.0 (no commercial use). See [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSE-ASSETS.md](https://github.com/realRoc/dsh-screensaver/blob/main/LICENSE-ASSETS.md).

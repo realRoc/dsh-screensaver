@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { compileScore, DEMO_SCORE, FX_NAMES, INSTRUMENT_FX, makeCursor, normPitch } from '../themes/magic-tower/src/score.js'
+import { readFileSync } from 'node:fs'
+import { compileScore, DEMO_SCORE, FX_LEAD, FX_NAMES, INSTRUMENT_FX, makeCursor, normPitch, sectionAt } from '../themes/magic-tower/src/score.js'
 
 describe('magic-tower score → fx cues', () => {
   it('turns beats into seconds and maps instruments to their default effect', () => {
@@ -79,5 +80,53 @@ describe('magic-tower score → fx cues', () => {
     expect(loop).toBeCloseTo(32 * 60 / 112)
     expect(cues.every((c) => FX_NAMES.includes(c.fx) && c.t >= 0 && c.t < loop)).toBe(true)
     expect(new Set(Object.values(INSTRUMENT_FX))).toEqual(new Set(FX_NAMES))
+  })
+})
+
+describe('magic-tower score: lead-in, sections and the Spiral Stair BGM', () => {
+  it('starts wound-up events early so their hit lands on the beat, wrapping into the previous pass of a loop', () => {
+    const { cues } = compileScore({ bpm: 60, loopBeats: 8, tracks: [{ instrument: 'impact', notes: [4, 0.5] }, { instrument: 'crash', notes: [2] }] })
+    const slash4 = cues.find((c) => c.fx === 'slash' && c.hit === 4)
+    expect(slash4.t).toBeCloseTo(4 - FX_LEAD.slash)
+    expect(cues.find((c) => c.fx === 'slash' && c.hit === 0.5).t).toBeCloseTo(8 + 0.5 - FX_LEAD.slash)   // 0.5 - 1.28 < 0 → end of the loop
+    expect(cues.find((c) => c.fx === 'swell').t).toBeCloseTo(2 - FX_LEAD.swell)
+    expect(cues.every((c, i) => i === 0 || c.t >= cues[i - 1].t)).toBe(true)
+  })
+
+  it('finds the section a score time falls in, modulo the loop', () => {
+    const c = compileScore({ bpm: 60, loopBeats: 8, sections: [{ name: 'a', b: 0, mood: 'walk' }, { name: 'b', b: 4, mood: 'freeze' }], tracks: [] })
+    expect(sectionAt(c, -1)).toBeNull()
+    expect(sectionAt(c, 0).name).toBe('a')
+    expect(sectionAt(c, 4).mood).toBe('freeze')
+    expect(sectionAt(c, 9).name).toBe('a')
+    expect(sectionAt(c, 13.5).name).toBe('b')
+    expect(sectionAt(compileScore({ bpm: 60, tracks: [] }), 3)).toBeNull()
+  })
+
+  const bgm = JSON.parse(readFileSync(new URL('../themes/magic-tower/music/out/spiral-stair.score.json', import.meta.url), 'utf8'))
+  const compiled = compileScore(bgm)
+
+  it('the bundled BGM visual score compiles whole: 40 bars at 120 BPM, nothing skipped', () => {
+    expect(compiled.skipped).toEqual([])
+    expect(compiled.loop).toBe(80)
+    expect(compiled.sections.map((s) => s.mood)).toEqual(['calm', 'walk', 'climb', 'full', 'freeze', 'full', 'gold'])
+  })
+
+  it('never starts one big event while another is still playing (only one can show at a time)', () => {
+    const LEN = { slash: 2.7, swell: 2.6, shower: 2.3 }
+    const big = compiled.cues.filter((c) => c.fx in LEN)
+    expect(big.length).toBeGreaterThan(0)
+    big.forEach((c, i) => { if (i) expect(c.t).toBeGreaterThanOrEqual(big[i - 1].t + LEN[big[i - 1].fx]) })
+    expect(big[big.length - 1].t + LEN[big[big.length - 1].fx]).toBeLessThanOrEqual(80 + big[0].t)   // and across the loop point
+  })
+
+  it('the picture gets busier as the music builds: intro < A < chorus, and the break is the quietest after the intro', () => {
+    const rate = (name) => {
+      const i = compiled.sections.findIndex((s) => s.name === name), a = compiled.sections[i].t, b = compiled.sections[i + 1]?.t ?? 80
+      return compiled.cues.filter((c) => c.hit >= a && c.hit < b).length / (b - a)
+    }
+    expect(rate('intro')).toBeLessThan(rate('A'))
+    expect(rate('A')).toBeLessThan(rate('chorus'))
+    expect(rate('break')).toBeLessThan(rate('A'))
   })
 })
