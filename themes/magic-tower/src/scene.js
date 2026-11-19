@@ -2504,8 +2504,12 @@ composer.addPass(hd2d);
 composer.renderToScreen = false;
 let running = true;
 
-// 低机位：镜头贴着台阶、在骑士身后，往天井和塔顶仰拍
-const CAM = { back: 6.5, r: 6.4, h: 1.1, ahead: 2, lr: 5.0, lh: 4.6, tilt: 1.4 };
+// 低机位：镜头贴着台阶、在骑士身后，往天井和塔顶仰拍。
+// 骑士身体中心落在画面左下的黄金分割点（左 0.382、上 0.618）：竖向由 lh 定（竖直视角固定，跟屏幕宽高比无关），
+// 横向每帧按宽高比把镜头转一点（宽屏不会往中间跑）；tilt 只留一点慢慢的抬头低头，不把骑士带离分割点
+const CAM = { back: 6.5, r: 6.4, h: 1.1, ahead: 0.4, lr: 5.0, lh: 2.25, tilt: 0.35 };
+const GOLDEN_X = 0.382;
+const knAim = new THREE.Vector3(), knAimCam = new THREE.Vector3();
 let progress = SPT;
 let time = 0;
 let freeCam = false;
@@ -2759,6 +2763,14 @@ function update(dt) {
     camera.position.copy(polar(CAM.r, camS * DTH, camS * RISE + RISE + CAM.h + Math.sin(time * 0.5) * 0.05));
     const ts = knS + CAM.ahead;
     camera.lookAt(polar(CAM.lr, ts * DTH, knS * RISE + CAM.lh + CAM.tilt * Math.sin(time * 0.09)));
+    // 绕竖轴转镜头，让骑士身体中心横向正好在左边黄金分割线上（转两次，第二次收掉仰角带来的一点误差）
+    knAim.copy(knight.position).addScaledVector(UP, (0.5 - KN_FEET) * KN_SIZE);
+    const want = Math.atan((2 * GOLDEN_X - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect);
+    for (let i = 0; i < 2; i++) {
+      camera.updateMatrixWorld();
+      knAimCam.copy(knAim).applyMatrix4(camera.matrixWorldInverse);
+      camera.rotateOnWorldAxis(UP, want - Math.atan2(knAimCam.x, -knAimCam.z));
+    }
     if (shake > 0.001) camera.position.add(new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(shake));
   } else {
     tmp.subVectors(knight.position, prevKn);
