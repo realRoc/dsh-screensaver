@@ -1,5 +1,5 @@
 {
-  "version": 1794985312,
+  "version": 1795057907,
   "dirs": 8,
   "frames": 8,
   "anims": {
@@ -7,7 +7,9 @@
       "feetV": 0.1175,
       "elevDeg": -6.0,
       "cell": 112,
-      "worldSize": 2.6
+      "worldSize": 2.6,
+      "frames": 8,
+      "target": 1.0
     },
     "sit": {
       "feetV": 0.1486,

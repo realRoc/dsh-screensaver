@@ -53,6 +53,42 @@ Then `/screensaver magic-tower`, or set `theme: magic-tower` in the dsh-screensa
   too; `#demo,nopure` keeps it on (used to record the README GIFs).
 - Built to the rules in [skills/dsh-screensaver-theme](../../skills/dsh-screensaver-theme/SKILL.md).
 
+## Instrument effects
+
+The magic in the tower is a set of effects meant to be driven by music: each instrument of a track maps to one effect
+(`INSTRUMENT_FX` in [src/score.js](src/score.js)). Without a score, as in the screen saver, the tower plays them in
+short phrases every few seconds.
+
+| Effect | Instrument | What you see |
+|---|---|---|
+| `beam` | kick | a column of light strikes down from the top of the tower; a shockwave and sparks where it lands |
+| `sigil` | snare, clap | a three-tier magic circle lying flat in the well, drawn top to bottom, then shattering |
+| `glitter` | hi-hat, shaker | a small cluster of cross-shaped glints (local only, never a full-screen flash) |
+| `ripple` | bass | a ring of runes sweeps up the book walls of the whole tower |
+| `aurora` | pad, strings, choir | one aurora ribbon per note: it grows in on the attack, holds while the note is held, retracts and drifts up on release |
+| `comet` | lead | a comet across the well; the higher the note, the higher it lands |
+| `chime` | arp, bell, pluck | a light runs along the railing and lamps flare as it passes |
+| `swell` / `slash` / `shower` | crash / section downbeat / fill | the armillary pulse, the giant light sword, a comet salvo |
+
+Pitch has one meaning across all of them: low notes sit lower in the tower and are bigger, slower and deep blue-violet;
+high notes sit higher and are smaller, faster, cyan-white to gold. Full-screen brightening (flash light and bloom) is
+capped at three times per second whatever the score asks for, and with reduced motion turned on the camera does not
+shake and flashes are dimmer.
+
+A score is plain data: tempo, an optional offset and loop, and per track the instrument (or an explicit `fx`) and its
+notes as beats, with optional velocity `v`, pitch `p` (0..1 or a MIDI note number) and length `d` in beats:
+
+```js
+{ bpm: 112, loopBeats: 32, tracks: [
+  { instrument: 'kick', notes: [0, 1, 2, 3] },
+  { instrument: 'pad', notes: [{ b: 0, d: 7, p: 48 }, { b: 0.5, d: 6.5, p: 55 }] },
+] }
+```
+
+`magicTower.fx` exposes `trigger(name, { v, p, d })` (velocity 0..1, pitch 0..1 or a MIDI note, length `d` in **seconds**), `play(score)`, `stop()` (stops a score or the gallery and drops queued effects) and `gallery()`. In the browser,
+`index.html#demo,fxgallery` plays every effect from low to high with its name on screen, and `index.html#demo,groove`
+plays an 8-bar demo score (`DEMO_SCORE`).
+
 ## Develop
 
 ```bash
@@ -61,6 +97,7 @@ npm run build      # rebuilds index.html from src/ and assets/ (commit index.htm
 npm run demo
 ```
 
-`src/scene.js` and `src/study.js` are the scene, `src/hud.js` the interface, `src/main.js` ties sessions to the scene.
+`src/scene.js` and `src/study.js` are the scene, `src/hud.js` the interface, `src/main.js` ties sessions to the scene,
+`src/score.js` turns a score into effect cues (no three.js; tested in `test/tower-score.test.js`).
 
 CC BY-NC-SA 4.0 (no commercial use). See [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSE-ASSETS.md](https://github.com/realRoc/dsh-screensaver/blob/main/LICENSE-ASSETS.md).

@@ -214,7 +214,10 @@
   body.secondary #ledger, body.secondary #banner, body.secondary #astro, body.secondary #hint, body.secondary #seal { display: none; }
   /* 纯享（外壳 30 秒没人动时发来）：这些都淡掉，只剩画面 */
   #astro, #hint { transition: opacity 1.2s ease; }
-  body.pure #ledger, body.pure #banner, body.pure #astro, body.pure #hint, body.pure #seal { opacity: 0 !important; transition: opacity 1.2s ease; }
+  body.pure #ledger, body.pure #banner, body.pure #astro, body.pure #hint, body.pure #seal, body.pure #fxLabel { opacity: 0 !important; transition: opacity 1.2s ease; }
+  /* 只在 #demo,fxgallery / #demo,groove 里出现：现在放的是哪种乐器特效 */
+  #fxLabel { position: fixed; inset-block-start: 6vh; inset-inline: 0; text-align: center; pointer-events: none;
+    font: 600 20px/1.4 var(--serif); letter-spacing: 0.18em; color: var(--gold-hi); text-shadow: 0 0 14px rgb(213 181 121 / 0.55); }
 
   /* ================= 演示面板（地址带 #demo 时按 D 打开） ================= */
   #dev { position: fixed; right: 16px; bottom: 16px; width: 236px; padding: 12px; border-radius: 10px;

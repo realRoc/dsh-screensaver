@@ -9,6 +9,7 @@
 // 屏保外壳是新版（saver.json 写了 "hud": true）时，右上角状态栏、底部提示、触控 ID 反馈也由主题画，位置跟外壳一样。
 import { banner, demoSeal, renderLedger, setHint, setStatus, showHud, touched, TX, ZH } from './hud.js'
 import { magicTower as tower } from './scene.js'
+import { DEMO_SCORE } from './score.js'
 
 const $ = (id) => document.getElementById(id)
 const DEMO = location.hash.includes('demo')
@@ -123,8 +124,20 @@ if (DEMO) {
     [54, () => finish(demo.find((x) => x.name === D.d), 'aborted')],
     [64, () => demo.filter(isLive).forEach((s) => finish(s, 'done'))],
   ]
+  // #demo,fxgallery：进塔后每种乐器特效轮流放一遍，屏幕上写着名字；#demo,groove：按演示乐谱（src/score.js 的 DEMO_SCORE）打特效。
+  // 这两种都一直待在塔里（会话不结束），方便看、方便录。
+  const FX_SHOW = location.hash.includes('fxgallery') ? 'gallery' : location.hash.includes('groove') ? 'groove' : null
+  if (FX_SHOW) SCRIPT.length = 1
+  const FX_ZH = { beam: '天光坠落 · 底鼓', sigil: '法阵 · 军鼓', glitter: '星芒 · 镲', ripple: '地脉 · 贝斯', aurora: '极光 · 铺底/弦乐', comet: '流星 · 主旋律', chime: '灯链 · 琶音/钟琴', swell: '星辉脉冲 · 重音', slash: '光之巨剑 · 段落重拍', shower: '彗星齐射 · 过门' }
+  const fxLabel = FX_SHOW && Object.assign(document.body.appendChild(document.createElement('div')), { id: 'fxLabel' })
+  let fxStarted = false
   let demoT = 0, idx = 0, auto = true, progT = 0
   demoTick = (dt) => {
+    if (FX_SHOW && !fxStarted && tower.mode === 'run') {
+      fxStarted = true
+      if (FX_SHOW === 'gallery') tower.fx.gallery((name) => { fxLabel.textContent = ZH ? FX_ZH[name] : name })
+      else { tower.fx.play(DEMO_SCORE, 0.5); fxLabel.textContent = ZH ? '演示节奏 112 BPM' : 'Demo groove · 112 BPM' }
+    }
     if (auto) {
       demoT += dt
       while (idx < SCRIPT.length && demoT >= SCRIPT[idx][0]) SCRIPT[idx++][1]()
