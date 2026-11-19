@@ -1,8 +1,8 @@
-// 把 song.mjs 编成三样东西，三者出自同一份音符表，所以永远对齐：
-//   out/spiral-stair.mid          多轨 MIDI：拖进 GarageBand / Logic / FL Studio / MuseScore 换音色、改音符
-//   out/spiral-stair.score.json   塔里特效用的「视觉谱」（src/score.js 的格式；src/main.js 打包进主题）
-//   out/spiral-stair-loop.m4a     演示页 index.html#demo,bgm 用：正好 40 小节 = 80 秒，首尾无缝（混响尾巴已经接到开头）
-//   out/spiral-stair-full.m4a     MV 用：完整一遍 + 收尾
+// 把 song.mjs 编成这几样东西，全部出自同一份音符表，所以永远对齐：
+//   out/star-well.mid          多轨 MIDI：拖进 GarageBand / Logic / FL Studio / MuseScore 换音色、改音符（含尾声小节）
+//   out/star-well.score.json   塔里特效用的「视觉谱」（src/score.js 的格式；src/main.js 打包进主题）
+//   out/star-well-loop.m4a     演示页 index.html#demo,bgm 用：正好 34 小节 = 85 秒，首尾无缝（混响尾巴已经接到开头）
+//   out/star-well-full.m4a     MV 用：完整一遍 + 尾声小节 + 余音（music/record.mjs 录视频用这个）
 // 用法：node music/build.mjs [--no-audio] [--stems]（在 themes/magic-tower 下）
 // 渲染要 fluidsynth + ffmpeg（brew install fluid-synth ffmpeg）和一个 GM 音色库（默认 GeneralUser GS）。
 
@@ -16,159 +16,138 @@ import * as S from './song.mjs'
 const here = dirname(fileURLToPath(import.meta.url))
 const out = join(here, 'out')
 mkdirSync(out, { recursive: true })
-const NAME = 'spiral-stair'
-const BEATS = S.BARS * 4
-const at = (bar, beat = 0) => bar * 4 + beat
-const sec = (name) => S.SECTIONS.find((s) => s.name === name)
+const NAME = 'star-well'
+const BEATS = S.BARS * S.METER
+const at = (bar, beat = 0) => bar * S.METER + beat
 const inSec = (bar, ...names) => names.includes(S.sectionAt(bar))
+const END = S.BARS                                     // 尾声小节（只在完整版里）
+const chordAt = (bar) => (bar === END ? S.END_CHORD : S.CHORDS[bar])
 
 // 固定种子的随机数：力度的人味儿，每次 build 一样
-let seed = 20261119
+let seed = 20261120
 const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
-const hv = (v, amt = 0.06) => Math.min(1, Math.max(0.05, v + (rnd() * 2 - 1) * amt))
+const hv = (v, amt = 0.04) => Math.min(1, Math.max(0.03, v + (rnd() * 2 - 1) * amt))
 
 // ── 声部 ────────────────────────────────────────────────────────────────
-// 每个声部是 [{ b, p, d, v }]（拍位、MIDI 音高、时值拍、力度 0..1）
+// 每个声部是 [{ b, p, d, v, end? }]（拍位、MIDI 音高、时值拍、力度 0..1；end = 尾声小节里的音，只进完整版）
 const parts = {}
-const add = (name, b, p, d, v) => (parts[name] ??= []).push({ b, p, d, v: hv(v) })
+const add = (name, b, p, d, v, extra = {}) => (parts[name] ??= []).push({ b, p, d, v: hv(v), ...extra })
+const endOf = (b) => (b >= at(END) ? { end: true } : {})
 
-// 旋律：A、B 段长笛；副歌起弦乐唱旋律、圆号低八度托着
-for (const [barStr, notes] of Object.entries(S.MELODY)) {
-  const bar = Number(barStr); let b = at(bar)
+// 旋律：升腾段弦乐唱（长笛叠在同度上给个头）；A、A′ 长笛；A′ 弦乐低八度陪着
+function melodyBar(bar, notes) {
+  let b = at(bar)
   const total = notes.reduce((s, [, d]) => s + d, 0)
-  if (Math.abs(total - 4) > 1e-9) throw new Error(`melody bar ${bar} has ${total} beats`)
+  if (Math.abs(total - S.METER) > 1e-9) throw new Error(`melody bar ${bar} has ${total} beats`)
   for (const [n, d] of notes) {
     if (n !== '-') {
-      const p = S.m(n), v = d >= 1.5 ? 0.85 : 0.75
-      add('lead', b, p, d, v)
+      const p = S.m(n), long = d >= 2, e = endOf(b)
+      if (bar === END) { add('flute', b, p, d + 3, 0.5, e); add('melStrings', b, p - 12, d + 3, 0.34, e) }
+      else if (S.MELODY_VOICE(bar) === 'strings') {
+        const lift = Math.max(0, bar - 6) * 0.025             // 升腾段一级级往上，力度也跟着起来，第 10 小节最响
+        add('melStrings', b, p, d - 0.04, 0.72 + Math.min(lift, 0.12) + (long ? 0.04 : 0))
+        add('flute', b, p, d - 0.08, 0.42 + lift * 0.5)
+      } else {
+        add('flute', b, p, d - 0.06, long ? 0.6 : 0.54)
+        if (inSec(bar, 'A2')) add('melStrings', b, p - 12, d - 0.04, 0.3)
+      }
     }
     b += d
   }
 }
-for (const [a, z] of S.TIES) {                         // 跨小节延音：同音高首尾相接就并成一个音
-  const L = parts.lead, last = L.findLast((n) => n.b < at(z)), next = L.find((n) => n.b === at(z))
-  if (last && next && last.p === next.p && Math.abs(last.b + last.d - next.b) < 1e-9) { last.d += next.d; L.splice(L.indexOf(next), 1) }
+for (const [bar, notes] of Object.entries(S.MELODY)) melodyBar(Number(bar), notes)
+melodyBar(END, S.END_MELODY)
+
+// 竖琴：安静的段落是圆舞曲的「一、二」—— 第一拍一个低音，第二拍一个琶开的和弦，第三拍留空（留白才静）；
+// 升腾段换成一小节六个八分音符的分解和弦一路往上流；蓄势最后两拍一个刮奏，落进门打开的那一拍
+const RISE_ORDER = [(c) => c.bass + 12, (c) => c.pad[0] + 12, (c) => c.pad[1] + 12, (c) => c.pad[2] + 12, (c) => c.pad[3] + 12, (c) => c.pad[1] + 24]
+for (let bar = 0; bar < S.BARS; bar++) {
+  if (inSec(bar, 'intro', 'breath', 'build')) continue
+  const c = S.CHORDS[bar]
+  if (inSec(bar, 'rise')) { RISE_ORDER.forEach((f, i) => add('harp', at(bar, i * 0.5), f(c), 1.2, i ? 0.54 : 0.66)); continue }
+  const g = 0
+  add('harp', at(bar), c.bass + 12, 2.5, 0.5 + g)
+  if (bar === S.BARS - 1) continue                     // 最后一小节只留低音，悬着
+  c.pad.forEach((p, i) => add('harp', at(bar, 1 + i * 0.06), p + 12, 1.6, 0.34 + g + i * 0.02))
 }
-for (const [barStr, notes] of Object.entries(S.BELL)) {
-  let b = at(Number(barStr))
-  for (const [n, d] of notes) { if (n !== '-') add('bell', b, S.m(n), d, 0.8); b += d }
+{
+  const g = S.HARP_GLISS, from = at(...g.from), to = at(...g.to), tones = S.CHORDS[g.from[0]].tones, lo = S.m(g.low), hi = S.m(g.high)
+  const notes = []; for (let p = lo; p <= hi; p++) if (tones.includes(p % 12)) notes.push(p)
+  notes.forEach((p, i) => add('harp', from + ((to - from) * i) / notes.length, p, 1.5, 0.32 + (0.3 * i) / notes.length))
+}
+S.END_CHORD.pad.forEach((p, i) => add('harp', at(END, i * 0.12), p + 12, 6, 0.4, { end: true }))
+add('harp', at(END), S.END_CHORD.bass + 12, 6, 0.5, { end: true })
+
+// 低音提琴：每小节一个长音；同音相连（D 持续音）就并成一个，不重新起音
+const lowVel = (bar) => (inSec(bar, 'rise') ? 0.7 : inSec(bar, 'build') ? 0.5 : inSec(bar, 'intro', 'breath') ? 0.4 : 0.44)
+for (let bar = 0; bar <= END; bar++) {
+  const p = chordAt(bar).bass, prev = parts.low?.at(-1)
+  if (prev && prev.p === p && Math.abs(prev.b + prev.d - at(bar)) < 1e-9 && bar !== END) { prev.d += S.METER; continue }
+  add('low', at(bar), p, bar === END ? 7 : S.METER, lowVel(bar), endOf(at(bar)))
 }
 
-// 铺底弦乐 + 合唱：每小节一个和弦，相邻小节的共同音直接延长（弦乐的保持音 = 塔里一条持续的极光）
-const padVel = (bar) => {
-  const s = S.sectionAt(bar)
-  if (s === 'intro') return 0.45
-  if (s === 'A') return 0.55
-  if (s === 'B') return 0.55 + (bar - sec('B').from) * 0.035
-  return s === 'final' ? 0.8 : 0.72
-}
-function sustained(name, bars, vel) {
+// 铺底弦乐 + 合唱：每小节一个和弦，相邻小节的共同音直接延长（弦乐的保持音 = 塔里一条慢慢的极光）
+const padVel = (bar) => ({ intro: 0.38, build: bar === 4 ? 0.48 : 0.6, rise: 0.68, A: 0.42, breath: 0.36, A2: 0.44, end: 0.4 })[S.sectionAt(bar)]
+function sustained(name, wants, vel) {
   const open = new Map()                               // 音高 → 正在响的音
-  for (let bar = 0; bar < S.BARS; bar++) {
-    const want = bars(bar) ? S.CHORDS[bar].pad : []
-    for (const [p, n] of open) if (!want.includes(p)) open.delete(p)
+  for (let bar = 0; bar <= END; bar++) {
+    const want = wants(bar) ? chordAt(bar).pad : []
+    for (const [p] of open) if (!want.includes(p)) open.delete(p)
     for (const p of want) {
-      if (open.has(p)) open.get(p).d += 4
-      else { const n = { b: at(bar), p, d: 4, v: hv(vel(bar), 0.03) }; (parts[name] ??= []).push(n); open.set(p, n) }
+      if (open.has(p) && bar !== END) open.get(p).d += S.METER
+      else { const n = { b: at(bar), p, d: bar === END ? 7 : S.METER, v: hv(vel(bar), 0.02), ...endOf(at(bar)) }; (parts[name] ??= []).push(n); open.set(p, n) }
     }
   }
-  for (const n of parts[name]) n.d -= 0.1                // 换和弦前留一点点气口
+  for (const n of parts[name]) n.d -= 0.08              // 换和弦前留一点点气口
 }
-sustained('pad', (bar) => !inSec(bar, 'break'), padVel)
-sustained('choir', (bar) => inSec(bar, 'chorus', 'final') || bar === 28 || bar === 29 || bar === 31, (bar) => (bar === 31 ? 0.55 : 0.62))
+sustained('pad', () => true, padVel)
+sustained('choir', (bar) => bar === 5 || inSec(bar, 'rise', 'breath') || (bar >= 30 && bar < 33), (bar) => (bar === 5 ? 0.48 : inSec(bar, 'rise') ? 0.6 + Math.min(bar - 6, 4) * 0.02 : 0.3))
 
-// 琶音：和弦音往上一个八度，八分音符按 3+3+2 排（重音落在第 1、4、7 个八分音符上）
-const ARP_ORDER = [0, 1, 2, 0, 1, 2, 3, 2]
-for (let bar = 0; bar < S.BARS; bar++) {
-  if (inSec(bar, 'break')) continue
-  const pad = S.CHORDS[bar].pad
-  const tones = (pad.length >= 4 ? pad : [...pad, pad[0] + 12]).map((p) => p + 12)
-  const up = inSec(bar, 'chorus', 'final') ? 12 : 0
-  ARP_ORDER.forEach((k, i) => {
-    const accent = i === 0 || i === 3 || i === 6
-    add(bar < 4 || bar === 39 ? 'celesta' : 'arp', at(bar, i * 0.5), tones[k] + up, 0.45, accent ? 0.72 : 0.5)
-  })
-}
-
-// 贝斯
-for (let bar = 0; bar < S.BARS; bar++) {
-  const r = S.CHORDS[bar].bass, s = S.sectionAt(bar)
-  if (s === 'A') {
-    [[0, 1.4, 0], [1.5, 1.4, 0], [3, 0.45, 0], [3.5, 0.45, 12]].forEach(([b, d, o], i) => add('bass', at(bar, b), r + o, d, (i ? 0.62 : 0.78) + (bar >= 8 ? 0.08 : 0)))
-  } else if (s === 'B') {
-    for (let i = 0; i < 8; i++) add('bass', at(bar, i * 0.5), r + (i % 2 && bar >= 16 ? 12 : 0), 0.42, 0.62 + (bar - 12) * 0.03 + (i % 2 ? 0 : 0.08))
-  } else if (s === 'chorus' || (s === 'final' && bar < 39)) {
-    [[0, 0], [0.75, 0], [1.5, 12], [2, 0], [2.75, 0], [3.5, 12]].forEach(([b, o], i) => add('bass', at(bar, b), r + o, 0.6, i % 3 === 0 ? 0.95 : 0.75))
-  } else if (bar === 39) {
-    add('bass', at(39), r, 2, 0.85)
-  }
-}
-add('bass', at(28), S.m('D1'), 3.5, 1)                  // 间奏重击下面的低音
-for (const b of [0, 0.75, 1.5]) add('bass', at(30, b), S.m('D1'), 0.5, 1)
-
-// 鼓
-const DR = { kick: 36, snare: 38, clap: 39, hihat: 42, openhat: 46, crash: 49, toms: [50, 48, 47, 45, 43, 41] }
-// 鼓的力度随段落走：A 收着 → B 一路推 → 副歌满 → 终副歌最满（压缩放轻了，这条曲线才听得出来）
-const drumGain = (bar) => {
-  const s = S.sectionAt(bar)
-  if (s === 'A') return bar < 8 ? 0.68 : 0.8
-  if (s === 'B') return 0.8 + (bar - 12) * 0.028
-  return s === 'final' ? 1 : 0.92
-}
-const fillAt = (bar) => S.FILLS.find((f) => f.bar === bar)
-for (let bar = 0; bar < S.BARS; bar++) {
-  const s = S.sectionAt(bar)
-  const g = s === 'A' ? S.GROOVES.A : s === 'B' ? S.GROOVES.B : (s === 'chorus' || (s === 'final' && bar < 39)) ? S.GROOVES.chorus : null
-  if (!g) continue
-  const f = fillAt(bar)
-  for (const [inst, beats] of Object.entries(g)) {
-    let bs = beats
-    if (inst === 'hihat' && s === 'B' && bar >= 16) bs = Array.from({ length: 16 }, (_, i) => i / 4)     // 后半段 B 换成十六分镲
-    if (s === 'A' && bar < 8) {                                // A 前四小节收着：军鼓只打第 4 拍（半速感），镲只打反拍
-      if (inst === 'snare') bs = [3]
-      if (inst === 'hihat') bs = bs.filter((b) => b % 1 === 0.5)
+// 谢泼德琶音（钢片琴）：每个音是「比上一个更高的下一个和弦音」，同一个音级在几个八度上同时响，
+// 音量 = 钟形曲线（中心 MIDI 74、宽 8 个半音）。安静的段落四分音符，蓄势和升腾加倍成八分音符。
+const SHEP = { center: 74, width: 8, lo: 48, hi: 100, floor: 0.1 }
+const shepWeight = (p) => Math.exp(-0.5 * ((p - SHEP.center) / SHEP.width) ** 2)
+let x = S.m('D4') - 0.5                                 // 「虚拟音高」，只会往上走
+const shepFirst = []                                    // 每小节第一个音最响的那层（给视觉谱）
+for (let bar = 0; bar <= END; bar++) {
+  const c = chordAt(bar), step = inSec(bar, 'build', 'rise') ? 0.5 : 1
+  const level = { intro: 0.56, build: 0.6, rise: 0.64, A: 0.5, breath: 0.58, A2: 0.5, end: 0.54 }[S.sectionAt(bar)]
+  for (let b = 0; b < S.METER - 1e-9; b += step) {
+    if (bar === END && b > 1) break
+    let next = Infinity
+    for (const t of c.tones) { let q = t; while (q <= x) q += 12; next = Math.min(next, q) }
+    x = next
+    let best = null
+    for (let p = (next % 12) + 12 * Math.floor(SHEP.lo / 12); p <= SHEP.hi; p += 12) {
+      if (p < SHEP.lo) continue
+      const w = shepWeight(p)
+      if (w < SHEP.floor) continue
+      add('shepard', at(bar, b), p, step * 2.2, level * (0.35 + 0.65 * w), endOf(at(bar, b)))
+      if (!best || w > best.w) best = { p, w }
     }
-    for (const b of bs) {
-      if (f && b >= f.from) continue
-      const v = inst === 'hihat' ? (b % 1 === 0.5 ? 0.62 : 0.45) : inst === 'kick' && b % 2 !== 0 ? 0.82 : 0.95
-      add(inst, at(bar, b), DR[inst], 0.25, v * drumGain(bar))
-    }
+    if (bar < END && (b === 0 || (step < 1 && Math.abs(b - 1.5) < 1e-9))) shepFirst.push({ b: at(bar, b), p: best.p, v: level })
   }
 }
-add('kick', at(39), DR.kick, 0.25, 1)
-for (const bar of S.CRASHES) add('crash', at(bar), DR.crash, 2, 1)
-add('crash', at(38), DR.crash, 2, 0.9)
-for (const f of S.FILLS) {
-  const steps = (4 - f.from) * 4
-  for (let i = 0; i < steps; i++) {
-    const v = 0.55 + (0.45 * i) / Math.max(1, steps - 1)
-    const p = f.kind === 'toms' ? DR.toms[Math.min(DR.toms.length - 1, Math.floor((i / steps) * DR.toms.length))] : DR.snare
-    add('fill', at(f.bar, f.from + i / 4), p, 0.25, v)
-  }
+
+// 定音鼓：滚奏（十六分音符渐强）+ 重击
+for (const [[b0, k0], [b1, k1], n, v0, v1] of S.TIMPANI_ROLLS) {
+  const from = at(b0, k0), to = at(b1, k1), steps = Math.round((to - from) * 4)
+  for (let i = 0; i < steps; i++) add('timpani', from + i / 4, S.m(n), 0.3, v0 + ((v1 - v0) * i) / steps)
 }
-for (const [bar, b] of S.IMPACTS) {
-  const v = bar === 30 ? 0.85 + b * 0.1 : 1
-  for (const p of ['D3', 'A3', 'D4']) add('impact', at(bar, b), S.m(p), 0.6, v)
-  add('timpani', at(bar, b), S.m('D2'), 1.5, v)
-  add('kick', at(bar, b), DR.kick, 0.25, 1)
-}
+for (const [bar, beat, n, v] of S.TIMPANI_HITS) add('timpani', at(bar, beat), S.m(n), 2.5, v)
 
 for (const k in parts) parts[k].sort((a, b) => a.b - b.b || a.p - b.p)
 
 // ── MIDI 轨道（音色 = General MIDI 编号；换音色只改这里）────────────────────
 const TRACKS = [
-  // 音量（vol = CC7）按分轨实测配平过：副歌的旋律要是全曲最响的东西，A 段的长笛不能抢过它
-  { name: 'Lead · Flute', ch: 0, prog: 73, vol: 76, pan: 64, rev: 55, notes: () => parts.lead.map((n) => (n.b < at(20) ? n : { ...n, v: n.v * 0.72 })) },   // 副歌里同度叠在弦乐上，给旋律一个清楚的头
-  { name: 'Lead · Strings', ch: 1, prog: 48, vol: 127, pan: 60, rev: 70, notes: () => parts.lead.filter((n) => n.b >= at(20)).map((n) => ({ ...n, v: n.v * (n.b < at(28) ? 0.88 : 1) })) },
-  { name: 'Lead · Horns (8vb)', ch: 2, prog: 60, vol: 100, pan: 70, rev: 70, notes: () => parts.lead.filter((n) => n.b >= at(20)).map((n) => ({ ...n, p: n.p - 12, v: n.v * (n.b < at(28) ? 0.7 : 0.95) })) },
-  { name: 'Bell · Celesta', ch: 3, prog: 8, vol: 100, pan: 64, rev: 95, notes: () => [...parts.bell, ...parts.celesta] },
-  { name: 'Arp · Harp', ch: 4, prog: 46, vol: 96, pan: 84, rev: 60, notes: () => parts.arp },
-  { name: 'Pad · Strings', ch: 5, prog: 49, vol: 72, pan: 44, rev: 85, notes: () => parts.pad },
-  { name: 'Pad · Choir', ch: 6, prog: 52, vol: 76, pan: 64, rev: 95, notes: () => parts.choir },
-  { name: 'Bass · Synth', ch: 7, prog: 38, vol: 84, pan: 64, rev: 8, notes: () => parts.bass },
-  { name: 'Impact · Orchestra Hit', ch: 8, prog: 55, vol: 92, pan: 64, rev: 70, notes: () => parts.impact },
-  { name: 'Impact · Timpani', ch: 10, prog: 47, vol: 112, pan: 64, rev: 60, notes: () => parts.timpani },
-  { name: 'Drums (Power kit)', ch: 9, prog: 16, vol: 88, pan: 64, rev: 28, notes: () => ['kick', 'snare', 'clap', 'hihat', 'openhat', 'crash', 'fill'].flatMap((k) => parts[k] ?? []) },
+  { name: 'Melody · Flute', ch: 0, prog: 73, vol: 92, pan: 66, rev: 72, notes: () => parts.flute },
+  { name: 'Melody · Strings', ch: 1, prog: 48, vol: 104, pan: 58, rev: 84, notes: () => parts.melStrings },
+  { name: 'Shepard · Celesta', ch: 2, prog: 8, vol: 116, pan: 40, rev: 108, notes: () => parts.shepard },
+  { name: 'Waltz · Harp', ch: 3, prog: 46, vol: 100, pan: 84, rev: 76, notes: () => parts.harp },
+  { name: 'Pad · Slow Strings', ch: 4, prog: 49, vol: 84, pan: 50, rev: 96, notes: () => parts.pad },
+  { name: 'Pad · Choir', ch: 5, prog: 52, vol: 80, pan: 64, rev: 110, notes: () => parts.choir },
+  { name: 'Low · Contrabass', ch: 6, prog: 43, vol: 96, pan: 64, rev: 56, notes: () => parts.low },
+  { name: 'Timpani', ch: 7, prog: 47, vol: 118, pan: 64, rev: 80, notes: () => parts.timpani },
 ]
 
 // ── 极简 MIDI 写入（format 1, 480 tick/拍）───────────────────────────────────
@@ -183,14 +162,15 @@ function trackBytes(events) {                               // events: [{ t(tick
   data.push(0, 0xff, 0x2f, 0)
   return chunk('MTrk', data)
 }
-function writeMidi(file, repeats = 1, only = null) {
+// repeats 遍循环（不带尾声）；withEnd = 最后一遍后面接尾声小节
+function writeMidi(file, { repeats = 1, withEnd = false, only = null } = {}) {
   const usPerBeat = Math.round(60e6 / S.BPM)
   const conductor = [
-    { t: 0, order: 0, bytes: [0xff, 0x03, ...vlq(Buffer.byteLength('Spiral Stair')), ...str('Spiral Stair')] },
+    { t: 0, order: 0, bytes: [0xff, 0x03, ...vlq(Buffer.byteLength(S.TITLE)), ...str(S.TITLE)] },
     { t: 0, order: 0, bytes: [0xff, 0x51, 3, (usPerBeat >> 16) & 255, (usPerBeat >> 8) & 255, usPerBeat & 255] },
-    { t: 0, order: 0, bytes: [0xff, 0x58, 4, 4, 2, 24, 8] },
-    { t: 0, order: 0, bytes: [0xff, 0x59, 2, 0xff, 1] },     // 调号：1 个降号、小调（D 小调记谱；多利亚的 B 用还原号）
-    ...S.SECTIONS.map((s) => ({ t: s.from * 4 * PPQ, order: 1, bytes: [0xff, 0x06, ...vlq(s.name.length), ...str(s.name)] })),
+    { t: 0, order: 0, bytes: [0xff, 0x58, 4, S.METER, 2, 24, 8] },
+    { t: 0, order: 0, bytes: [0xff, 0x59, 2, 0xff, 1] },     // 调号：1 个降号、小调（D 小调）
+    ...S.SECTIONS.map((s) => ({ t: s.from * S.METER * PPQ, order: 1, bytes: [0xff, 0x06, ...vlq(s.name.length), ...str(s.name)] })),
   ]
   const tracks = [trackBytes(conductor)]
   for (const tr of TRACKS) {
@@ -203,7 +183,9 @@ function writeMidi(file, repeats = 1, only = null) {
       { t: 0, order: 3, bytes: [0xb0 | tr.ch, 91, tr.rev] },
     ]
     for (let r = 0; r < repeats; r++) {
+      const last = r === repeats - 1
       for (const n of tr.notes()) {
+        if (n.end && !(withEnd && last)) continue
         const on = Math.round((n.b + r * BEATS) * PPQ), off = Math.round((n.b + n.d + r * BEATS) * PPQ)
         const vel = Math.max(1, Math.min(127, Math.round(n.v * 127)))
         ev.push({ t: on, order: 5, bytes: [0x90 | tr.ch, n.p, vel] }, { t: off, order: 4, bytes: [0x80 | tr.ch, n.p, 0] })
@@ -216,48 +198,34 @@ function writeMidi(file, repeats = 1, only = null) {
 }
 
 // ── 塔里的特效乐谱（score.js 格式；乐器名就是 INSTRUMENT_FX 的键）────────────
-// 这是「视觉谱」，不是把每个音都打成特效：音乐里铺满的织体（琶音、镲、贝斯的八分音符）只取 3+3+2 的重音，
-// 让画面的密度跟着曲子的起伏走（A 收着 → B 推 → 副歌满），而不是从头到尾一样满。
+// 「视觉谱」是从音乐里挑出来的，不是每个音都打：画面跟曲子一样静，只在进塔的升腾段热闹起来。
+//   旋律每个音 → 一颗流星（主角）；谢泼德琶音每小节第一个音 → 一盏灯链（升腾段一小节两盏）；
+//   竖琴低音 → 地脉涟漪（升腾段每小节，A、A′ 隔一小节）；铺底 → 一条很淡的极光，只在前奏、升腾、静息里换和弦时；
+//   光之巨剑落在升腾段的最高点和 A′ 回来的第一拍；静息第一拍 → 星辉脉冲。没有鼓组，就没有天光、法阵、星芒。
 const r3 = (x) => +x.toFixed(3), r2 = (x) => +x.toFixed(2)
-const pick = (k, keep = () => true) => (parts[k] ?? []).filter(keep).map(({ b, p, d, v }) => ({ b: r3(b), p, d: r3(d), v: r2(v) }))
-const beatsOnly = (k, keep = () => true) => (parts[k] ?? []).filter(keep).map(({ b, v }) => ({ b: r3(b), v: r2(v) }))
-const barOf = (n) => Math.floor(n.b / 4), pos = (n) => n.b - barOf(n) * 4, onPos = (...ps) => (n) => ps.some((x) => Math.abs(pos(n) - x) < 1e-6)
-const ACCENT = onPos(0, 1.5, 3)                     // 一小节八个八分音符里的 3+3+2 重音
-const bars = (from, to) => (n) => barOf(n) >= from && barOf(n) < to
-const ones = (...list) => list.map(([bar, beat = 0]) => ({ b: at(bar, beat) }))
-// 段落 → 塔里的状态（scene.js 的 MOODS）：骑士走多快、灯多亮、颜色多暖
-const MOOD = { intro: 'calm', A: 'walk', B: 'climb', chorus: 'full', break: 'freeze', final: 'full' }
+const loopOnly = (n) => !n.end
+const pick = (k, keep = () => true) => (parts[k] ?? []).filter(loopOnly).filter(keep).map(({ b, p, d, v }) => ({ b: r3(b), p, d: r3(d), v: r2(v) }))
+const barOf = (n) => Math.floor(n.b / S.METER + 1e-9)
+const MOOD = { intro: 'calm', build: 'calm', rise: 'full', A: 'walk', breath: 'hush', A2: 'walk' }
+const topPad = (n) => n.p === Math.max(...S.CHORDS[barOf(n)].pad)
 const score = {
-  title: 'Spiral Stair · 螺旋书阶',
+  title: S.TITLE,
   bpm: S.BPM,
   offset: 0,
   loopBeats: BEATS,
-  sections: [...S.SECTIONS.map((s) => ({ name: s.name, b: s.from * 4, mood: MOOD[s.name] })), { name: 'picardy', b: at(38), mood: 'gold' }],
+  sections: S.SECTIONS.map((s) => ({ name: s.name, b: s.from * S.METER, mood: MOOD[s.name] })),
   tracks: [
-    { instrument: 'kick', notes: beatsOnly('kick', (n) => !S.IMPACTS.some(([bar, beat]) => Math.abs(n.b - at(bar, beat)) < 1e-6)) },
-    { instrument: 'snare', notes: beatsOnly('snare') },
-    { instrument: 'clap', notes: beatsOnly('clap') },
-    // 镲：只在 B 段后半（十六分镲那几小节，取反拍八分音符）和副歌的开镲上闪，A 段不闪
-    { instrument: 'hihat', notes: [...beatsOnly('hihat', (n) => bars(16, 20)(n) && pos(n) % 1 === 0.5), ...beatsOnly('openhat')].sort((a, b) => a.b - b.b) },
-    // 贝斯：一小节两次（A 段 0、1.5 拍；B 段和副歌 0、2 拍），间奏的低音重击全留
-    { instrument: 'bass', notes: pick('bass', (n) => (S.sectionAt(barOf(n)) === 'A' ? onPos(0, 1.5)(n) : onPos(0, 2)(n)) || bars(28, 32)(n)) },
-    // 铺底：前奏、间奏里极光就是主角，每个和弦音一条；其它段落鼓和旋律已经很满，只留和弦最高的那个声部（几条丝带叠在一起会把天井冲白）
-    { instrument: 'pad', notes: [...pick('pad', (n) => bars(0, 4)(n) || n.p === Math.max(...S.CHORDS[barOf(n)].pad)), ...pick('choir', bars(28, 32))].sort((a, b) => a.b - b.b) },
-    { instrument: 'lead', notes: pick('lead') },
-    { instrument: 'arp', notes: [...pick('arp', ACCENT), ...pick('celesta', ACCENT)].sort((a, b) => a.b - b.b) },
-    { instrument: 'bell', notes: pick('bell') },
-    // 大事件一次只能演一个，按段落功能排好不撞车（巨剑和脉冲的蓄力本身就是过门的画面，过门不再另打）：
-    //   B 段、副歌后半、终副歌后半进来：星辉脉冲；副歌、间奏、终副歌进来：光之巨剑；
-    //   间奏的三声重击：三道最粗的天光；落到 D 大三那一刻：彗星齐射
-    { instrument: 'crash', notes: ones([12], [24], [36]) },
-    { instrument: 'impact', notes: ones([20], [28], [32]) },
-    { instrument: 'impact', fx: 'beam', notes: ones([30, 0], [30, 0.75], [30, 1.5]).map((n, i) => ({ ...n, v: 1, p: 0.05 + i * 0.1 })) },
-    { instrument: 'fill', notes: ones([38]) },
+    { instrument: 'lead', notes: [...pick('flute', (n) => S.MELODY_VOICE(barOf(n)) === 'flute'), ...pick('melStrings', (n) => S.MELODY_VOICE(barOf(n)) === 'strings')].sort((a, b) => a.b - b.b) },
+    { instrument: 'arp', notes: shepFirst.map(({ b, p, v }) => ({ b: r3(b), p, v: r2(v + 0.05) })) },
+    { instrument: 'bass', notes: pick('harp', (n) => Math.abs(n.b - at(barOf(n))) < 1e-9 && (inSec(barOf(n), 'rise') || barOf(n) % 2 === 0) && !inSec(barOf(n), 'build')).map((n) => ({ ...n, v: 0.45 })) },
+    { instrument: 'pad', notes: pick('pad', (n) => inSec(barOf(n), 'intro', 'rise', 'breath') && topPad(n) && !S.SWORDS.some(([bar]) => bar === barOf(n))).map((n) => ({ ...n, v: 0.35 })) },
+    { instrument: 'impact', notes: S.SWORDS.map(([bar, beat]) => ({ b: at(bar, beat) })) },
+    { instrument: 'crash', notes: S.PULSE.map(([bar, beat]) => ({ b: at(bar, beat) })) },
   ],
 }
 writeFileSync(join(out, `${NAME}.score.json`), JSON.stringify(score) + '\n')
-writeMidi(join(out, `${NAME}.mid`))
-const counts = Object.fromEntries(score.tracks.map((t) => [t.instrument, t.notes.length]))
+writeMidi(join(out, `${NAME}.mid`), { withEnd: true })
+const counts = Object.fromEntries(score.tracks.map((t) => [t.fx ?? t.instrument, t.notes.length]))
 console.log(`score: ${BEATS} beats = ${(BEATS * 60) / S.BPM}s`, counts)
 
 // ── 渲染音频 ────────────────────────────────────────────────────────────────
@@ -266,38 +234,43 @@ const SF = process.env.SOUNDFONT ?? join(homedir(), 'Library/Audio/Sounds/Banks/
 if (!existsSync(SF)) throw new Error(`soundfont not found: ${SF} (set SOUNDFONT=...)`)
 const tmp = join(out, '.tmp'); mkdirSync(tmp, { recursive: true })
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] }).toString()
-const synth = (mid, wav) => run('fluidsynth', ['-ni', '-q', '-g', '0.55', '-r', '48000', '-o', 'synth.reverb.room-size=0.78', '-o', 'synth.reverb.damp=0.35',
-  '-o', 'synth.reverb.width=1.0', '-o', 'synth.reverb.level=0.7', '-o', 'synth.chorus.active=0', '-F', wav, SF, mid])
-const LOOP_SEC = (BEATS * 60) / S.BPM
+// 大厅混响：房间大、衰减慢，钢片琴和管钟的尾巴拖在后面 = 塔里的空旷
+const synth = (mid, wav) => run('fluidsynth', ['-ni', '-q', '-g', '0.6', '-r', '48000', '-o', 'synth.reverb.room-size=0.9', '-o', 'synth.reverb.damp=0.3',
+  '-o', 'synth.reverb.width=1.0', '-o', 'synth.reverb.level=0.85', '-o', 'synth.chorus.active=0', '-F', wav, SF, mid])
+const BAR_SEC = (S.METER * 60) / S.BPM
+const LOOP_SEC = S.BARS * BAR_SEC
+const FULL_SEC = LOOP_SEC + BAR_SEC + 4.5
 // 循环版：渲两遍，取第二遍 → 开头带着上一遍的混响尾巴，首尾接上听不出缝
-writeMidi(join(tmp, 'x2.mid'), 2)
+writeMidi(join(tmp, 'x2.mid'), { repeats: 2 })
 synth(join(tmp, 'x2.mid'), join(tmp, 'x2.wav'))
-// 完整版：一遍 + 4 秒尾巴
-synth(join(out, `${NAME}.mid`), join(tmp, 'x1.wav'))
+// 完整版：一遍 + 尾声小节 + 余音
+writeMidi(join(tmp, 'x1.mid'), { withEnd: true })
+synth(join(tmp, 'x1.mid'), join(tmp, 'x1.wav'))
 
-const BUS = 'highpass=f=30,equalizer=f=250:t=q:w=1:g=-2,equalizer=f=3500:t=q:w=1.2:g=1.5,acompressor=threshold=-15dB:ratio=1.8:attack=25:release=300:makeup=1.5'
-// 母带：先量整体响度，再整体加一个固定增益到 -14 LUFS，最后限幅器只削峰。
-// （不用 loudnorm 的动态模式：它是自动增益，会把 A 段、副歌、终副歌拉成一样响，曲子的起伏就没了）
+// 安静的曲子：只削掉极低频、很轻的压缩（1.4:1），整体对到 -16 LUFS（比流行歌轻，留着动态）
+const TARGET = -16
+const BUS = 'highpass=f=35,equalizer=f=280:t=q:w=1:g=-1.5,equalizer=f=9000:t=q:w=1:g=1,acompressor=threshold=-22dB:ratio=1.4:attack=40:release=400:makeup=1'
+// 母带：先量整体响度，再整体加一个固定增益，最后限幅器只削峰（不用 loudnorm 的动态模式：它会把段落的起伏拉平）
 function master(src, dst, [from, to], fadeOut = 0) {
   const pre = `atrim=start=${from}:end=${to},asetpts=N/SR/TB,${BUS}`
   const probe = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', src, '-af', `${pre},ebur128`, '-f', 'null', '-'], { encoding: 'utf8' })
   const I = Number(/Summary:[\s\S]*?I:\s+(-?[\d.]+) LUFS/.exec(probe.stderr)[1])
-  const gain = (-14 - I).toFixed(2)
+  const gain = (TARGET - I).toFixed(2)
   const fade = fadeOut ? `,afade=t=out:st=${to - from - fadeOut}:d=${fadeOut}` : ''
-  run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', src, '-af', `${pre},volume=${gain}dB,alimiter=limit=0.87:attack=3:release=60:level=false${fade}`, '-ar', '48000', '-c:a', 'pcm_s16le', dst + '.wav'])
-  run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', dst + '.wav', '-c:a', 'aac', '-b:a', '160k', dst + '.m4a'])
+  run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', src, '-af', `${pre},volume=${gain}dB,alimiter=limit=0.89:attack=5:release=80:level=false${fade}`, '-ar', '48000', '-c:a', 'pcm_s16le', dst + '.wav'])
+  run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', dst + '.wav', '-c:a', 'aac', '-b:a', '192k', dst + '.m4a'])
 }
 master(join(tmp, 'x2.wav'), join(out, `${NAME}-loop`), [LOOP_SEC, LOOP_SEC * 2])
-master(join(tmp, 'x1.wav'), join(out, `${NAME}-full`), [0, LOOP_SEC + 4], 3)
-// 分轨（--stems）：每条轨单独渲一遍，未压缩、未母带，拖进 DAW 自己混
+master(join(tmp, 'x1.wav'), join(out, `${NAME}-full`), [0, FULL_SEC], 3.5)
+// 分轨（--stems）：每条轨单独渲一遍（完整版），未压缩、未母带，拖进 DAW 自己混
 if (process.argv.includes('--stems')) {
   const dir = join(out, 'stems'); mkdirSync(dir, { recursive: true })
   for (const [i, tr] of TRACKS.entries()) {
     const slug = `${String(i + 1).padStart(2, '0')}-${tr.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
-    writeMidi(join(tmp, 's.mid'), 1, tr)
+    writeMidi(join(tmp, 's.mid'), { withEnd: true, only: tr })
     synth(join(tmp, 's.mid'), join(dir, `${slug}.wav`))
   }
   console.log('stems:', dir)
 }
 rmSync(tmp, { recursive: true, force: true })
-console.log('audio:', join(out, `${NAME}-loop.m4a`), join(out, `${NAME}-full.m4a`))
+console.log(`audio: loop ${LOOP_SEC}s, full ${FULL_SEC}s →`, join(out, `${NAME}-loop.m4a`), join(out, `${NAME}-full.m4a`))

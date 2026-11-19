@@ -83,7 +83,7 @@ describe('magic-tower score → fx cues', () => {
   })
 })
 
-describe('magic-tower score: lead-in, sections and the Spiral Stair BGM', () => {
+describe('magic-tower score: lead-in, sections and the Star Well BGM', () => {
   it('starts wound-up events early so their hit lands on the beat, wrapping into the previous pass of a loop', () => {
     const { cues } = compileScore({ bpm: 60, loopBeats: 8, tracks: [{ instrument: 'impact', notes: [4, 0.5] }, { instrument: 'crash', notes: [2] }] })
     const slash4 = cues.find((c) => c.fx === 'slash' && c.hit === 4)
@@ -103,30 +103,39 @@ describe('magic-tower score: lead-in, sections and the Spiral Stair BGM', () => 
     expect(sectionAt(compileScore({ bpm: 60, tracks: [] }), 3)).toBeNull()
   })
 
-  const bgm = JSON.parse(readFileSync(new URL('../themes/magic-tower/music/out/spiral-stair.score.json', import.meta.url), 'utf8'))
+  const bgm = JSON.parse(readFileSync(new URL('../themes/magic-tower/music/out/star-well.score.json', import.meta.url), 'utf8'))
   const compiled = compileScore(bgm)
+  const rate = (name) => {
+    const i = compiled.sections.findIndex((s) => s.name === name), a = compiled.sections[i].t, b = compiled.sections[i + 1]?.t ?? compiled.loop
+    return compiled.cues.filter((c) => c.hit >= a && c.hit < b).length / (b - a)
+  }
 
-  it('the bundled BGM visual score compiles whole: 40 bars at 120 BPM, nothing skipped', () => {
+  it('the bundled BGM visual score compiles whole: 34 bars of 3/4 at 72 BPM = 85 s, nothing skipped', () => {
     expect(compiled.skipped).toEqual([])
-    expect(compiled.loop).toBe(80)
-    expect(compiled.sections.map((s) => s.mood)).toEqual(['calm', 'walk', 'climb', 'full', 'freeze', 'full', 'gold'])
+    expect(compiled.loop).toBe(85)
+    expect(compiled.sections.map((s) => s.mood)).toEqual(['calm', 'calm', 'full', 'walk', 'hush', 'walk'])
   })
 
-  it('never starts one big event while another is still playing (only one can show at a time)', () => {
-    const LEN = { slash: 2.7, swell: 2.6, shower: 2.3 }
+  it('stays quiet: under two effects a second, no drum effects, big events never overlap', () => {
+    expect(compiled.cues.length / compiled.loop).toBeLessThan(2)
+    expect(compiled.cues.filter((c) => ['beam', 'sigil', 'glitter', 'shower'].includes(c.fx))).toEqual([])
+    const LEN = { slash: 1.4 + 2.7 + 1.8, swell: 2.6 }                 // the sword includes the camera turning up and back
     const big = compiled.cues.filter((c) => c.fx in LEN)
-    expect(big.length).toBeGreaterThan(0)
+    expect(big.map((c) => c.fx)).toEqual(['slash', 'swell', 'slash'])
     big.forEach((c, i) => { if (i) expect(c.t).toBeGreaterThanOrEqual(big[i - 1].t + LEN[big[i - 1].fx]) })
-    expect(big[big.length - 1].t + LEN[big[big.length - 1].fx]).toBeLessThanOrEqual(80 + big[0].t)   // and across the loop point
   })
 
-  it('the picture gets busier as the music builds: intro < A < chorus, and the break is the quietest after the intro', () => {
-    const rate = (name) => {
-      const i = compiled.sections.findIndex((s) => s.name === name), a = compiled.sections[i].t, b = compiled.sections[i + 1]?.t ?? 80
-      return compiled.cues.filter((c) => c.hit >= a && c.hit < b).length / (b - a)
-    }
+  it('the first sword lands on the top of the rise, after the climb into the tower has begun', () => {
+    const rise = compiled.sections.find((s) => s.name === 'rise').t
+    const sword = compiled.cues.find((c) => c.fx === 'slash')
+    expect(rise).toBe(15)
+    expect(sword.hit).toBe(25)
+    expect(sword.t).toBeGreaterThan(rise + 4.2)          // the camera starts turning up once the enter transition (4.2 s) is over
+  })
+
+  it('the picture follows the music: the rise is the busiest, the breath and the intro the stillest', () => {
+    expect(rate('rise')).toBeGreaterThan(rate('A'))
+    expect(rate('breath')).toBeLessThan(rate('A'))
     expect(rate('intro')).toBeLessThan(rate('A'))
-    expect(rate('A')).toBeLessThan(rate('chorus'))
-    expect(rate('break')).toBeLessThan(rate('A'))
   })
 })

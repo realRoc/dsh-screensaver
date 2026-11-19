@@ -35,11 +35,13 @@ export const INSTRUMENT_FX = {
   fill: 'shower',    // 过门：星辉仪朝四面书墙连射彗星
 }
 
+// 光之巨剑出场前，镜头先花这么多秒抬头转向塔顶（scene.js 的 swordLook），然后剑显形、1.28 秒后劈中
+export const SWORD_TURN = 1.4
 /**
  * 有蓄力的大事件：特效开始后要过这么多秒才「打中」（巨剑劈到底、星辉仪爆开）。
  * 编乐谱时把这类音符提前这么多秒打出去，打中的那一下才落在拍子上。
  */
-export const FX_LEAD = { slash: 1.28, swell: 1.0 }
+export const FX_LEAD = { slash: SWORD_TURN + 1.28, swell: 1.0 }
 
 /** 特效名单（塔里能触发的全部特效） */
 export const FX_NAMES = ['beam', 'sigil', 'glitter', 'ripple', 'aurora', 'comet', 'chime', 'swell', 'slash', 'shower']

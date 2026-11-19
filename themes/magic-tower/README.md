@@ -56,8 +56,10 @@ Then `/screensaver magic-tower`, or set `theme: magic-tower` in the dsh-screensa
 ## Instrument effects
 
 The magic in the tower is a set of effects meant to be driven by music: each instrument of a track maps to one effect
-(`INSTRUMENT_FX` in [src/score.js](src/score.js)). Without a score, as in the screen saver, the tower plays them in
-short phrases every few seconds.
+(`INSTRUMENT_FX` in [src/score.js](src/score.js)). Without a score, as in the screen saver, the tower picks at random
+every 6–11 s between short phrases built from these effects and the three big events (the sword of light, the comet
+volley, the starlight pulse). It never repeats the last pick and never plays two big events in a row, so the effects
+vary without piling up.
 
 | Effect | Instrument | What you see |
 |---|---|---|
@@ -91,25 +93,80 @@ plays an 8-bar demo score (`DEMO_SCORE`).
 
 A score may also list `sections` (`{ name, b, mood }`); while it plays, the tower follows the mood of the current
 section: how fast the knight climbs, how bright the lamps are and how far every effect leans towards gold (`MOODS` in
-`src/scene.js`: `calm`, `walk`, `climb`, `full`, `freeze`, `gold`). `play(score, { clock })` follows an outside clock,
+`src/scene.js`: `calm`, `walk`, `climb`, `hush`, `full`, `freeze`, `gold`). `play(score, { clock })` follows an outside clock,
 such as the playback position of an audio file, instead of the tower's own. Effects with a wind-up (`slash`, `swell`)
 start early by `FX_LEAD` seconds so the blow lands on the beat.
 
-## Original BGM: Spiral Stair
+## Original BGM: Star Well
 
-[music/](music/) holds an original 80-second loop written for the climb, *Spiral Stair* (螺旋书阶): D Dorian, 120 BPM,
-a 3+3+2 rhythm and an A–D–E–F motif that climbs a step at a time. The bass rises a step per bar in the B section, the
-music stops dead in the break, and the last two bars land on D major. [music/song.mjs](music/song.mjs) is the song
-itself (chords, melody, bass and drums written as bars and beats). `node music/build.mjs` turns it into a multitrack MIDI
-file, the audio (a seamless loop and a full version with an ending) and the effect score
-(`music/out/spiral-stair.score.json`). The effect score keeps only the accents of the busy parts, so the picture builds
-with the music, and it gives each section a mood: the knight stops and the lamps dim in the break, and the tower turns
-gold on the final chord. Rendering needs `fluidsynth`, `ffmpeg` and a General MIDI SoundFont (GeneralUser GS by
-default, `SOUNDFONT=` to change); `--stems` also writes one WAV per track.
+[music/](music/) holds *Star Well* (星井), an original 85-second loop written for the climb. It is quiet, mysterious and
+unhurried, with no drum kit: a slow waltz in 3/4 at ♩ = 72 in D minor. Its colour comes from chords that never quite land: B♭maj7,
+the Neapolitan E♭maj7♯11, and A7sus4 at the end of every phrase, so the loop runs back into the intro in one breath. A
+celesta plays a Shepard arpeggio all the way through: each note is the next chord tone above the last, sounding in
+several octaves at once with the loudest in the middle register, so it keeps climbing without ever reaching the top.
+
+The piece is built around the dive into the tower, which is its first climax:
+
+1. **Intro and build (in the study).** A two-bar build (Gm9 → A7♭9, a timpani roll and a harp glissando) leads to
+   the climax.
+2. **Rise.** The dominant resolves deceptively onto B♭maj7 as the book's light bursts and the camera dives in. The
+   bass then rises a step a bar while strings, flute and choir push the motif up to its peak, where the sword of light
+   strikes.
+3. **A section.** The music settles into the flute's motif, which leaps up a fifth and steps back down.
+4. **Breath.** A D pedal and a single pulse of light.
+5. **A′ section.** The motif returns, with a second sword on its first beat.
+
+[music/song.mjs](music/song.mjs) is the song itself. `node music/build.mjs` turns it into a multitrack MIDI file, the audio (a
+seamless loop, and a full version that ends on D minor) and the effect score (`music/out/star-well.score.json`).
+Rendering needs `fluidsynth`, `ffmpeg` and a General MIDI SoundFont (GeneralUser GS by default, `SOUNDFONT=` to
+change); `--stems` also writes one WAV per track.
+
+The effect score is picked from the music, not note for note, so the picture is only as busy as the song (under two
+effects a second):
+
+| Music | Effect |
+| --- | --- |
+| Each melody note | A comet |
+| First note of the Shepard arpeggio | A lamp chain (twice a bar in the rise) |
+| Harp bass | A ground ripple |
+| Chord changes in the intro, the rise and the breath | One faint aurora |
+| Top of the rise, and the return of the motif | The sword of light |
+| Start of the breath | A starlight pulse |
+
+Sections change only the lamps (brighter in the rise, dimmer and warmer in the breath). The knight keeps the same pace
+throughout, and the camera follows from a step behind and above, with him small on the left of a wide view up the tower.
 
 `index.html#demo,bgm` plays the loop with the effects driven by the audio's playback position (click once to allow
 sound, press M to pause). If the audio cannot load, the effects play silently on the tower's clock. The screen saver
-itself plays no sound and keeps its usual effect phrases.
+itself plays no sound and picks its effect phrases at random.
+
+The sword of light strikes from the centre of the tower's top opening. When it appears, its hilt is fixed on the
+tower's axis, 14 above the camera. The blade appears slanting into the side of the frame and chops down until it is
+nearly vertical. As it lands, a shockwave sweeps out from the axis across the well to the railing, followed by a
+slower second ring.
+
+The camera turns towards the sword in two steps:
+1. Over 1.4 s, with the move easing in and out, it tilts up as far as it can while the knight stays in the frame. The
+   knight's body has to stay clear of the side and bottom edges, and his feet stay above the bottom edge.
+2. It then turns towards the axis within the same limits.
+
+It holds through the strike and returns to the knight over 1.8 s. The camera only turns: it doesn't move or zoom. The
+same happens in the screen saver. `FX_LEAD` starts the sword early enough for the strike to land on the beat.
+
+### Record a video
+
+```bash
+npm run build
+node music/record.mjs                      # 3:4 1080×1440, 92 s → music/out/star-well-3x4.mp4
+node music/record.mjs --size 1920x1080     # 16:9
+node music/record.mjs --still 20,45,58     # PNG stills of those moments
+```
+
+The recorder opens `index.html#demo,bgm,record` in headless Chrome and steps it one frame at a time, so picture and
+music line up exactly however slow the machine is. It then muxes in the full mix. The video:
+- starts in the study through the intro and the build;
+- dives into the book at 13.65 s, so the page burst lands on the first beat of the rise (15 s);
+- flies back to the study after the closing D minor chord. It needs Google Chrome, `ffmpeg` and `npm install` (for `playwright-core`).
 
 ## Develop
 
@@ -121,6 +178,6 @@ npm run demo
 
 `src/scene.js` and `src/study.js` are the scene, `src/hud.js` the interface, `src/main.js` ties sessions to the scene,
 `src/score.js` turns a score into effect cues (no three.js; tested in `test/tower-score.test.js`), `music/` writes and
-renders the BGM.
+renders the BGM and records videos.
 
 CC BY-NC-SA 4.0 (no commercial use). See [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSE-ASSETS.md](https://github.com/realRoc/dsh-screensaver/blob/main/LICENSE-ASSETS.md).
