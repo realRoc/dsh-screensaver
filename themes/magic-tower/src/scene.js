@@ -9,7 +9,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { buildStudy } from './study.js';
-import { compileScore, FX_NAMES, makeCursor, normPitch } from './score.js';
+import { compileScore, FX_NAMES, makeCursor, normPitch, sectionAt, SWORD_TURN } from './score.js';
 import KN_META from '../assets/knight.json';
 import walkIndex from '../assets/knight_walk_index.png';
 import walkNormal from '../assets/knight_walk_normal.png';
@@ -1441,6 +1441,7 @@ scene.add(new THREE.HemisphereLight(0x7090c0, 0x2a2018, 0.95));
 const CANDLE_LIGHTS = 4, LAMP_LIGHTS = 2;
 const candleLights = Array.from({ length: CANDLE_LIGHTS }, () => { const l = new THREE.PointLight(0xff9a4a, 0, 0, 2); scene.add(l); return l; });
 const lampLights = Array.from({ length: LAMP_LIGHTS }, () => { const l = new THREE.PointLight(0x9ad0ff, 0, 0, 2); scene.add(l); return l; });
+const LAMP_COL = new THREE.Color(0x9ad0ff), WELL_COL = new THREE.Color(0x9ad8ff), LAMP_GOLD = new THREE.Color(0xffc98a);   // 乐谱落到大调（mood gold）时灯转暖
 const wellLight = new THREE.PointLight(0x9ad8ff, 16, 0, 2); scene.add(wellLight);
 const deepLight = new THREE.PointLight(0x5a8cff, 22, 0, 2); scene.add(deepLight);
 const moonLight = new THREE.DirectionalLight(0xb4d0ff, 0.9); scene.add(moonLight, moonLight.target);   // 天顶满月往井里打的冷光   // 井底往上打的冷光，照亮台阶底面和飞书封面
@@ -2027,8 +2028,10 @@ const arcMat = new THREE.ShaderMaterial({
     void main(){
       float ang = atan(vP.y, vP.x), r = length(vP);
       float lo = min(uA0, uA1), hi = max(uA0, uA1);
+      if (ang < lo) ang += 6.2831853;                          // 扇面跨过 ±π 时接上
       if (ang < lo || ang > hi) discard;
-      float lead = 1.0 - (ang - uA1) / max(uA0 - uA1, 1e-3);    // 前沿最亮
+      float span = uA0 - uA1; if (abs(span) < 1e-3) span = 1e-3;   // 两个方向都能挥
+      float lead = 1.0 - (ang - uA1) / span;                    // 前沿最亮
       lead *= 0.35 + 0.65 * smoothstep(3.6, 4.7, r);           // 只亮外缘一道弧，不糊满整个扇面
       float radial = smoothstep(0.8, 4.6, r) * (1.0 - smoothstep(4.6, 5.0, r));
       float a = clamp(pow(lead, 2.5) * radial * uAlpha * (0.8 + 0.2*sin(r*14.0 - uTime*30.0)), 0.0, 1.0);
@@ -2086,13 +2089,34 @@ const FX_COL = { blue: [0.45, 0.8, 1.0], gold: [1.0, 0.8, 0.42] };     // 池子
 // 音高 → 外观，所有乐器特效共用一套：
 //   低音：在塔里更低、更大更粗、更慢，深蓝紫；高音：更高、更小更细、更快，青白 → 金
 const PITCH_STOPS = [[0, [0.5, 0.32, 1.0]], [0.35, [0.38, 0.62, 1.0]], [0.65, [0.62, 0.92, 1.0]], [1, [1.0, 0.8, 0.42]]];
+// 段落状态（乐谱 sections[].mood）：骑士走多快（rate）、塔里的灯多亮（lamp）、所有特效往金色偏多少（warm）。
+// 没在放乐谱时一直是 walk，跟原来一样。
+const MOODS = {
+  // 骑士一直同一个速度走（段落只换灯光的明暗冷暖，不让他忽快忽慢）
+  calm: { rate: 1, lamp: 0.85, warm: 0 },      // 前奏
+  walk: { rate: 1, lamp: 0.95, warm: 0 },
+  climb: { rate: 1, lamp: 1.05, warm: 0 },
+  hush: { rate: 1, lamp: 0.7, warm: 0.25 },    // 静息：灯暗下去、偏暖
+  full: { rate: 1, lamp: 1.12, warm: 0 },      // 高潮：塔身全亮
+  freeze: { rate: 0, lamp: 0.3, warm: 0 },     // 停步（旧谱用过，留着）
+  gold: { rate: 1, lamp: 1.2, warm: 1 },
+};
+const moodNow = { ...MOODS.walk };
+let moodName = 'walk';
+function easeMood(dt) {
+  const m = MOODS[moodName] ?? MOODS.walk, k = 1 - Math.exp(-dt * (moodName === 'freeze' ? 14 : 2.5));   // 急停要快，回来慢慢走起来
+  for (const key in moodNow) moodNow[key] += (m[key] - moodNow[key]) * k;
+}
+const PITCH_GOLD = PITCH_STOPS[PITCH_STOPS.length - 1][1];
 function pitchCol(p) {
   p = THREE.MathUtils.clamp(p, 0, 1);
+  let c = PITCH_GOLD;
   for (let i = 1; i < PITCH_STOPS.length; i++) {
     const [p1, c1] = PITCH_STOPS[i], [p0, c0] = PITCH_STOPS[i - 1];
-    if (p <= p1) { const k = (p - p0) / (p1 - p0); return c0.map((x, j) => x + (c1[j] - x) * k); }
+    if (p <= p1) { const k = (p - p0) / (p1 - p0); c = c0.map((x, j) => x + (c1[j] - x) * k); break; }
   }
-  return PITCH_STOPS[PITCH_STOPS.length - 1][1];
+  const w = moodNow.warm * 0.75;
+  return w > 0.001 ? c.map((x, j) => x + (PITCH_GOLD[j] - x) * w) : c;
 }
 const lerp = THREE.MathUtils.lerp;
 /** y：离镜头高度的偏移；size：大小倍数；speed：快慢倍数 */
@@ -2507,9 +2531,30 @@ let running = true;
 // 低机位：镜头贴着台阶、在骑士身后，往天井和塔顶仰拍。
 // 骑士身体中心落在画面左下的黄金分割点（左 0.382、上 0.618）：竖向由 lh 定（竖直视角固定，跟屏幕宽高比无关），
 // 横向每帧按宽高比把镜头转一点（宽屏不会往中间跑）；tilt 只留一点慢慢的抬头低头，不把骑士带离分割点
-const CAM = { back: 6.5, r: 6.4, h: 1.1, ahead: 0.4, lr: 5.0, lh: 2.25, tilt: 0.35 };
-const GOLDEN_X = 0.382;
+const CAM = { back: 8.5, r: 8.1, h: 2.8, ahead: 0.4, lr: 5.0, lh: 2.25, tilt: 0.35, fov: 72, gx: 0.29, gy: 0.58 };
 const knAim = new THREE.Vector3(), knAimCam = new THREE.Vector3();
+// 光之巨剑的镜头：turn 秒抬头（缓入缓出），剑显形到劈完 strike 秒一直看着，再用 back 秒回到骑士的黄金分割点。
+// 朝中轴线上剑身砸下来的地方看过去：先抬头、再往天井那边转，各自只转到骑士还留在画面里为止
+// （骑士身体中心离左右边、下边留 keep，脚不出下边）—— 骑士一直在画面里，转过去刚好看见剑身从上面劈下来
+const SWORD = { turn: SWORD_TURN, strike: 2.7, back: 1.8, height: 14, length: 12, keepX: 0.8, keepY: -0.7, keepFeet: -0.97 };
+const swordQ0 = new THREE.Quaternion(), swordQ = new THREE.Quaternion(), swordQ2 = new THREE.Quaternion(), swordAim = new THREE.Vector3(), swordP = new THREE.Vector3();
+// 剑从塔顶开口的圆心劈下来：剑柄在塔的中轴线上、比镜头高 height（出场那一刻定下，之后固定在塔里），剑长 length
+function swordPivot() {
+  if (!ev.pivot) { ev.pivot = new THREE.Vector3(0, camera.position.y + SWORD.height, 0); ev.L = SWORD.length; }
+  return ev.pivot;
+}
+function knightInFrame() {
+  camera.updateMatrixWorld();
+  const c = swordP.copy(knAim).project(camera);
+  if (Math.abs(c.x) > SWORD.keepX || c.y < SWORD.keepY) return false;
+  return swordP.copy(knight.position).project(camera).y >= SWORD.keepFeet;
+}
+function swordLook(t) {
+  if (!ev || ev.type !== 'sword') return 0;
+  const e = t - ev.t0, ss = THREE.MathUtils.smoothstep;
+  if (e < SWORD.turn) return ss(e, 0, SWORD.turn);
+  return 1 - ss(e, SWORD.turn + SWORD.strike, SWORD.turn + SWORD.strike + SWORD.back);
+}
 let progress = SPT;
 let time = 0;
 let freeCam = false;
@@ -2561,6 +2606,9 @@ function updateWell(t, camY) {
     const sway = tmp2.copy(b.off).applyAxisAngle(UP, Math.sin(t * 0.7 + b.ph) * 0.6);
     const p = leaderPos(L, t, camY, tmp).add(sway);
     const q = leaderPos(L, t + 0.06, camY, new THREE.Vector3()).add(sway);
+    // 书别糊到镜头上（进塔俯冲时镜头从天井里穿过）：离得太近就往外让开，大书让得多
+    const keep = 1.6 + b.s * 0.8, away = tmp3.subVectors(p, camera.position), d = away.length();
+    if (d < keep) p.addScaledVector(d > 1e-4 ? away.divideScalar(d) : UP, keep - d);
     const vel = q.sub(p);
     if (vel.lengthSq() > 1 || vel.lengthSq() < 1e-8) vel.copy(tangent(Math.atan2(p.z, p.x))).multiplyScalar(Math.sign(L.w));
     mBook.lookAt(p, new THREE.Vector3().copy(p).sub(vel), UP);
@@ -2604,7 +2652,7 @@ function updateWell(t, camY) {
   pages.instanceMatrix.needsUpdate = true;
 
   // 彗星
-  if (t >= nextComet) { spawnComet(camY); nextComet = t + rand(0.6, 1.8); }
+  if (t >= nextComet) { if (!scoreRun) spawnComet(camY); nextComet = t + rand(0.6, 1.8); }   // 放乐谱时流星只跟主旋律走
   comets.forEach((c, i) => {
     if (c.state === 0) return;
     const k = (t - c.t0) / c.dur;
@@ -2631,18 +2679,25 @@ function updateWell(t, camY) {
 //   shower —— 星辉仪一口气朝四面书墙射出一串彗星（shower）
 //   pulse  —— 星辉仪先吸光、再爆开一圈横贯塔身的脉冲（swell）
 // 骑士的剑会和这些事件「共鸣」：剑光变亮、碎屑变多。
-// 没有乐谱时（屏保平时就是这样）每 5.5–8.5 秒轮流上演一段：三个大事件，和用乐器特效编的三小段。
+// 没有乐谱时（屏保平时就是这样）每隔 6–11 秒随机上演一段：三个大事件，和用乐器特效编的三小段。
+// 随机但不轰炸：不连着放同一段，两个大事件之间至少隔一小段，段与段之间留足空。
 const AMBIENT = ['sword', 'beams', 'shower', 'sigils', 'pulse', 'aurora'];
 const PHRASES = {
   beams: [[0, 'beam', { v: 1 }], [0.2, 'glitter', { v: 0.6 }], [0.45, 'beam', { v: 0.65, p: 0.2 }], [0.9, 'beam', { v: 0.65, p: 0.8 }], [1.6, 'beam', { v: 1, p: 0.5 }]],
   sigils: [[0, 'sigil', { v: 0.8 }], [0.5, 'sigil', { v: 0.8, p: 0.8 }], [0.55, 'glitter'], [1.0, 'sigil', { v: 1 }], [1.3, 'ripple', { v: 0.8 }]],
   aurora: [[0, 'aurora', { d: 6 }], [0.8, 'chime', { p: 0.3 }], [2.4, 'chime', { p: 0.8 }], [4, 'ripple', { v: 0.6 }]],
 };
-let ringFlare = 0, armPulse = 0, ambientI = 0;
+let ringFlare = 0, armPulse = 0;
 const pendingFx = [];                     // 排着队等打的特效 [时刻, 名字, 参数]
 let scoreRun = null, gallery = null, evClock = 0;
 function startEvent(type) { ev = { t0: time, type, n: 0 }; }
-function endEvent(t) { ev = null; nextEvent = Math.max(nextEvent, t + rand(5.5, 8.5)); }
+function endEvent(t) { ev = null; nextEvent = Math.max(nextEvent, t + rand(6, 11)); }
+let lastAmbient = null;
+function pickAmbient() {
+  const big = (a) => !PHRASES[a];
+  const pool = AMBIENT.filter((a) => a !== lastAmbient && !(lastAmbient && big(lastAmbient) && big(a)));
+  return (lastAmbient = pool[Math.floor(Math.random() * pool.length)]);
+}
 function queueFx(list, t0 = time) { for (const [dt, name, o] of list) pendingFx.push([t0 + dt, name, o]); }
 /** 打一个特效。name 见 FX_NAMES；o = { v 力度 0..1, p 音高 0..1, d 时值秒 } */
 function triggerFx(name, opts = {}) {
@@ -2663,9 +2718,19 @@ function triggerFx(name, opts = {}) {
 }
 /** 换播放方式（乐谱 / 画廊 / 停）时先清场：排队的特效、正在演的大事件都不带进下一段 */
 function clearStage() { pendingFx.length = 0; ev = null; }
-/** 按乐谱打特效（乐谱格式见 src/score.js）；delay 秒后从第 0 拍开始。晚了 0.25 秒以上的音符直接跳过，不补打 */
-function playScore(score, delay = 0) { clearStage(); scoreRun = { cursor: makeCursor(compileScore(score), { maxLag: 0.25 }), t0: time + delay }; gallery = null; }
-function stopScore() { clearStage(); scoreRun = null; gallery = null; nextEvent = Math.max(nextEvent, time + 2); }
+/**
+ * 按乐谱打特效（乐谱格式见 src/score.js）。晚了 0.25 秒以上的音符直接跳过，不补打。
+ *   play(score, delay)              delay 秒后从第 0 拍开始，用塔自己的时钟
+ *   play(score, { clock })          跟着外面的时钟走：clock() 返回乐谱时间（秒），比如正在放的 BGM 的播放位置
+ */
+function playScore(score, opts = 0) {
+  const { delay = 0, clock = null } = typeof opts === 'number' ? { delay: opts } : (opts ?? {});
+  const compiled = compileScore(score);
+  clearStage();
+  scoreRun = { compiled, cursor: makeCursor(compiled, { maxLag: 0.25 }), t0: time + delay, clock: typeof clock === 'function' ? clock : null };
+  gallery = null;
+}
+function stopScore() { clearStage(); scoreRun = null; gallery = null; moodName = 'walk'; nextEvent = Math.max(nextEvent, time + 2); }
 /** 演示：每种特效轮流放一遍（onName(name) 告诉页面现在放的是哪个） */
 const GALLERY = {      // 每种都从低音走到高音，看得出音高怎么变；极光是三个音错开起止的和弦
   beam: [[0, { v: 1, p: 0 }], [0.6, { v: 0.9, p: 0.33 }], [1.2, { v: 0.9, p: 0.66 }], [1.8, { v: 1, p: 1 }]],
@@ -2677,7 +2742,7 @@ const GALLERY = {      // 每种都从低音走到高音，看得出音高怎么
   chime: [[0, { p: 0.1 }], [1.1, { p: 0.9 }]],
   swell: [[0, {}]], slash: [[0, {}]], shower: [[0, {}]],
 };
-function playGallery(onName) { clearStage(); gallery = { next: time + 0.5, i: 0, onName }; scoreRun = null; }
+function playGallery(onName) { clearStage(); gallery = { next: time + 0.5, i: 0, onName }; scoreRun = null; moodName = 'walk'; }
 
 function updateEvents(t, camY) {
   blade.visible = false; slashArc.visible = false; swordTipGlow.visible = false;
@@ -2686,11 +2751,14 @@ function updateEvents(t, camY) {
     // 进塔、离塔的转场里（书房里塔的时钟停着）：乐谱和画廊的时钟一起停，排队的特效作废，
     // 不然再进塔时这几秒错过的特效会在同一帧全部打出来
     pendingFx.length = 0;
-    if (scoreRun) scoreRun.t0 += dt;
+    if (scoreRun && !scoreRun.clock) scoreRun.t0 += dt;
     if (gallery) gallery.next += dt;
   } else {
-    if (scoreRun) for (const c of scoreRun.cursor.advance(t - scoreRun.t0)) triggerFx(c.fx, c);
-    else if (gallery) {
+    if (scoreRun) {
+      const st = scoreRun.clock ? scoreRun.clock() : t - scoreRun.t0;
+      for (const c of scoreRun.cursor.advance(st)) triggerFx(c.fx, c);
+      moodName = sectionAt(scoreRun.compiled, st)?.mood ?? 'walk';
+    } else if (gallery) {
       if (t >= gallery.next) {
         const name = FX_NAMES[gallery.i++ % FX_NAMES.length];
         gallery.onName?.(name);
@@ -2698,33 +2766,43 @@ function updateEvents(t, camY) {
         gallery.next = t + (name === 'aurora' ? 7.5 : 3.4);
       }
     } else if (!ev && t >= nextEvent) {
-      const a = AMBIENT[ambientI++ % AMBIENT.length];
-      if (PHRASES[a]) { queueFx(PHRASES[a], t); nextEvent = t + rand(5.5, 8.5); } else startEvent(a);
+      const a = pickAmbient();
+      if (PHRASES[a]) { queueFx(PHRASES[a], t); nextEvent = t + rand(6, 11); } else startEvent(a);
     }
   }
   for (let i = pendingFx.length - 1; i >= 0; i--) if (pendingFx[i][0] <= t) { const [, name, o] = pendingFx.splice(i, 1)[0]; triggerFx(name, o); }
   if (ev) {
     const e = t - ev.t0;
     if (ev.type === 'sword') {
-      const pivot = new THREE.Vector3(0, camY + 12, 0), L = 11, A0 = 0.95, A1 = -2.25;
+      // 先给镜头 SWORD.turn 秒抬头转向塔顶（见 swordLook），剑再显形、劈落；劈完镜头慢慢回到骑士
+      const e = t - ev.t0 - SWORD.turn;
+      // 剑柄钉在塔顶圆心：剑先斜着显形（剑身伸向画面里那一侧、略往下），再往下劈到快竖直、砸进天井。
+      // 圆心在画面右边就横在左边，反之在右边（a 是剑在画面里偏离「朝上」的角度：π/2 横、π 竖直朝下）
+      const pivot = swordPivot(), L = ev.L;
+      if (ev.side === undefined) { camera.updateMatrixWorld(); ev.side = swordP.copy(pivot).project(camera).x > 0 ? 1 : -1; }
+      const A0 = 1.85 * ev.side, A1 = 2.9 * ev.side;
       const k = THREE.MathUtils.clamp((e - 0.9) / 0.38, 0, 1), a = A0 + (A1 - A0) * easeOut(k);
-      const fade = e < 1.5 ? Math.min(1, e / 0.6) : Math.max(0, 1 - (e - 1.5) / 1.0);
+      const fade = e < 1.4 ? Math.min(1, e / 0.6) : Math.max(0, 1 - (e - 1.4) / 0.7);    // 砸到底后 0.7 秒收掉，让冲击波露出来
       const dir = new THREE.Vector3().addScaledVector(camRight, -Math.sin(a)).addScaledVector(camUp, Math.cos(a));
       blade.visible = fade > 0.01; blade.position.copy(pivot);
       blade.quaternion.copy(camera.quaternion).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), a));
-      blade.scale.set(3.0, L, 1); bladeMat.uniforms.uA.value = fade;
+      blade.scale.set(3.0 * L / 11, L, 1); bladeMat.uniforms.uA.value = fade;
       if (k > 0 && fade > 0.01) {
         slashArc.visible = true; slashArc.position.copy(pivot); slashArc.quaternion.copy(camera.quaternion); slashArc.scale.setScalar(L / 5);
-        arcMat.uniforms.uA0.value = A0 + Math.PI / 2; arcMat.uniforms.uA1.value = a + Math.PI / 2; arcMat.uniforms.uAlpha.value = fade;
+        arcMat.uniforms.uA0.value = A0 + Math.PI / 2; arcMat.uniforms.uA1.value = a + Math.PI / 2; arcMat.uniforms.uAlpha.value = fade * 0.5;   // 剑很长，刀光扇面淡一点
       }
       if (ev.n === 0 && e > 0.1) { ev.n = 1; spawnBurst(pivot.clone().addScaledVector(dir, L * 0.8), [0.5, 0.8, 1.0], 2.2, 1); hit({ res: 0.8 }); }
       if (ev.n === 1 && k >= 1) {
         ev.n = 2;
-        for (const f of [0.35, 0.65, 0.95]) spawnBurst(pivot.clone().addScaledVector(dir, L * f), f > 0.9 ? [0.9, 0.95, 1.0] : [0.35, 0.7, 1.0], 1.2 + f * 1.6, 0);
-        startWave(camY + 3.5, 5.6, [0.45, 0.8, 1.0]);
-        hit({ flash: 0.55, shake: 0.1, bloom: 0.3, res: 1.6, ring: 1, at: pivot.clone().addScaledVector(dir, L * 0.9) });
+        for (const f of [0.35, 0.65]) spawnBurst(pivot.clone().addScaledVector(dir, L * f), [0.35, 0.7, 1.0], 0.9 + f * 1.2, 0);
+        // 砸到底：剑尖那个高度上，一圈冲击波从塔心横扫整个天井，后面跟一圈慢一点的余波
+        const tip = pivot.clone().addScaledVector(dir, L), waveY = THREE.MathUtils.clamp(tip.y, camY - 1.5, camY + 5);
+        startWave(waveY, 5.5, [0.6, 0.85, 1.0], 0, 0, 0.9);            // 横扫到栏杆为止，不从镜头头顶扫过去（不然整屏发白）
+        startWave(waveY - 0.6, 4.0, [0.4, 0.7, 1.0], 0, 0, 1.6);
+        spawnBurst(tip, [0.9, 0.95, 1.0], 1.3, 0);
+        hit({ flash: 0.3, shake: 0.12, bloom: 0.15, res: 1.2, ring: 1, at: tip });   // 闪光收着点，让冲击波的圈看得见
       }
-      if (e > 2.7) endEvent(t);
+      if (e > SWORD.strike + SWORD.back) endEvent(t);
     } else if (ev.type === 'shower') {
       armPulse = Math.max(armPulse, Math.min(1, e * 2));
       if (e < 1.7 && e > ev.n * 0.17) { ev.n++; spawnComet(camY, armillary.position); }
@@ -2747,7 +2825,8 @@ function updateEvents(t, camY) {
 
 function update(dt) {
   time += dt;
-  progress += dt * SPEED;
+  easeMood(dt);
+  progress += dt * SPEED * moodNow.rate;
   const knS = progress, camS = knS - CAM.back;
   shared.uTime.value = time;
   hd2d.uniforms.uTime.value = time;
@@ -2762,14 +2841,44 @@ function update(dt) {
   if (!freeCam) {
     camera.position.copy(polar(CAM.r, camS * DTH, camS * RISE + RISE + CAM.h + Math.sin(time * 0.5) * 0.05));
     const ts = knS + CAM.ahead;
-    camera.lookAt(polar(CAM.lr, ts * DTH, knS * RISE + CAM.lh + CAM.tilt * Math.sin(time * 0.09)));
-    // 绕竖轴转镜头，让骑士身体中心横向正好在左边黄金分割线上（转两次，第二次收掉仰角带来的一点误差）
+    camera.lookAt(polar(CAM.lr, ts * DTH, knS * RISE + CAM.lh));
+    // 把骑士身体中心放到画面 (gx, gy)：绕竖轴、再绕镜头横轴各转一点（各转三次收掉互相带出的误差），跟屏幕宽高比无关；
+    // gy 带一点很慢的起伏（原来「慢慢抬头低头」的那一下）
     knAim.copy(knight.position).addScaledVector(UP, (0.5 - KN_FEET) * KN_SIZE);
-    const want = Math.atan((2 * GOLDEN_X - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect);
-    for (let i = 0; i < 2; i++) {
+    const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const wantX = Math.atan((2 * CAM.gx - 1) * tanH * camera.aspect);
+    const wantY = Math.atan((1 - 2 * (CAM.gy + CAM.tilt * 0.04 * Math.sin(time * 0.09))) * tanH);
+    for (let i = 0; i < 3; i++) {
       camera.updateMatrixWorld();
       knAimCam.copy(knAim).applyMatrix4(camera.matrixWorldInverse);
-      camera.rotateOnWorldAxis(UP, want - Math.atan2(knAimCam.x, -knAimCam.z));
+      camera.rotateOnWorldAxis(UP, wantX - Math.atan2(knAimCam.x, -knAimCam.z));
+      camera.updateMatrixWorld();
+      knAimCam.copy(knAim).applyMatrix4(camera.matrixWorldInverse);
+      camera.rotateX(Math.atan2(knAimCam.y, -knAimCam.z) - wantY);
+    }
+    // 光之巨剑：镜头抬头看向塔顶下面悬着的剑，劈完再回来（只转不挪、视角不变）
+    const sw = swordLook(time);
+    if (sw > 0) {
+      swordQ0.copy(camera.quaternion);
+      camera.updateMatrixWorld();
+      const q = swordP.copy(swordPivot()).addScaledVector(UP, -0.35 * ev.L).applyMatrix4(camera.matrixWorldInverse);   // 看剑身砸下来的地方
+      const pitch = Math.max(0, Math.atan2(q.y, -q.z)), yaw = -Math.atan2(q.x, -q.z);
+      swordQ.copy(camera.quaternion);
+      const most = (apply) => {                            // 二分：这一步最多能转多少（0..1）还看得见骑士
+        let lo = 0, hi = 1;
+        for (let i = 0; i < 10; i++) {
+          const mid = (lo + hi) / 2;
+          camera.quaternion.copy(swordQ); apply(mid);
+          if (knightInFrame()) lo = mid; else hi = mid;
+        }
+        return lo;
+      };
+      const kp = most((k) => camera.rotateX(pitch * k));
+      camera.quaternion.copy(swordQ); camera.rotateX(pitch * kp); swordQ.copy(camera.quaternion);
+      const ky = most((k) => camera.rotateOnWorldAxis(UP, yaw * k));
+      camera.quaternion.copy(swordQ); camera.rotateOnWorldAxis(UP, yaw * ky);
+      swordQ2.copy(camera.quaternion);
+      camera.quaternion.copy(swordQ0).slerp(swordQ2, sw);
     }
     if (shake > 0.001) camera.position.add(new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(shake));
   } else {
@@ -2828,7 +2937,9 @@ function update(dt) {
     l.intensity = 3.5 * w * (0.85 + 0.1 * Math.sin(time * 8 + c * 1.7) + 0.05 * Math.sin(time * 19 + c));
   });
   const lf = camS / 8, l0 = Math.floor(lf), lfr = lf - l0;
-  lampLights.forEach((l, i) => { l.position.copy(lampPos(l0 + i)); l.intensity = 4 * (i === 0 ? 1 - lfr : lfr); });
+  lampLights.forEach((l, i) => { l.position.copy(lampPos(l0 + i)); l.intensity = 4 * moodNow.lamp * (i === 0 ? 1 - lfr : lfr); l.color.copy(LAMP_COL).lerp(LAMP_GOLD, moodNow.warm); });
+  wellLight.intensity = 16 * (0.4 + 0.6 * moodNow.lamp); deepLight.intensity = 22 * (0.4 + 0.6 * moodNow.lamp);
+  wellLight.color.copy(WELL_COL).lerp(LAMP_GOLD, moodNow.warm * 0.6);
 
   updateWell(time, camera.position.y);
 
@@ -3113,7 +3224,7 @@ function swoopCamera(k) {
   const roll = (1 - e) * (1 - e) * 2.4;                     // 俯冲时镜头翻滚着落下来
   camera.up.set(Math.sin(roll), Math.cos(roll), 0);
   camera.lookAt(swoopLook.lerp(normLook, e));
-  camera.fov = 62 + (1 - e) * 22; camera.updateProjectionMatrix();
+  camera.fov = CAM.fov + (1 - e) * 22; camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
 function placeHeroBook(e) {
@@ -3175,7 +3286,7 @@ function frame(dt, draw = true) {
     camera.up.set(0, 1, 0);
     update(dt);
     if (mode === 'enter') swoopCamera(clamp01((e - 1.2) / 2.8));
-    else if (camera.fov !== 62) { camera.fov = 62; camera.updateProjectionMatrix(); }
+    else if (camera.fov !== CAM.fov) { camera.fov = CAM.fov; camera.updateProjectionMatrix(); }
     if (mode === 'leave') {
       placeHeroBook(e);
       if (e > 1.4 && !heroBurstDone) { heroBurstDone = true; towerPages.fire(time, heroBook.position.clone(), camera.getWorldDirection(new THREE.Vector3()).negate()); }
@@ -3295,14 +3406,18 @@ export const magicTower = {
     resize();
   },
   onFrame(fn) { frameHooks.push(fn); },
-  start() {
+  /** manual：不开动画循环，由 tick() 一帧一帧推（录视频） */
+  start({ manual = false } = {}) {
     resize();
     update(0);
     clock.getDelta();
-    renderer.setAnimationLoop(loop);
+    if (!manual) renderer.setAnimationLoop(loop);
   },
+  get canvas() { return renderer.domElement; },
   /** 乐器特效：trigger(name, { v, p, d }) 打一个；play(score) 按乐谱打（格式见 src/score.js）；gallery(onName) 每种轮流放一遍 */
-  fx: { names: FX_NAMES, trigger: triggerFx, play: playScore, stop: stopScore, gallery: playGallery },
+  fx: { names: FX_NAMES, trigger: triggerFx, play: playScore, stop: stopScore, gallery: playGallery, get mood() { return moodName; } },
+  /** 录视频：不靠 requestAnimationFrame，往前走一帧（draw 时画出来） */
+  tick(dt, draw = true) { frame(dt, draw); for (const f of frameHooks) f(dt); },
   /** 调试：不靠 requestAnimationFrame 往前推 sec 秒（只在最后画一帧） */
   simulate(sec, fps = 30) {
     for (let i = 0; i < sec * fps; i++) { frame(1 / fps, false); for (const f of frameHooks) f(1 / fps); }

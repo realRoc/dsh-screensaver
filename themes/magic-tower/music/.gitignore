@@ -1,0 +1,5 @@
+out/*.wav
+out/stems/
+out/.tmp/
+out/stills/
+out/*.mp4

@@ -7,6 +7,7 @@
 //     bpm: 112,                 // 每分钟拍数
 //     offset: 0.0,              // 第 0 拍在音频里的秒数（音频开头有空白时用）
 //     loopBeats: 32,            // 可选：循环长度（拍）；不写就只放一遍
+//     sections: [{ name: 'break', b: 112, mood: 'freeze' }],   // 可选：从第几拍起塔里换成什么状态（scene.js 的 MOODS）
 //     tracks: [
 //       { instrument: 'kick', notes: [0, 1, 2, 3] },                    // 只写拍位
 //       { instrument: 'lead', fx: 'comet', notes: [{ b: 4, v: 0.8, p: 0.6, d: 1 }] },   // b 拍位 v 力度 p 音高 d 时值（拍）
@@ -33,6 +34,14 @@ export const INSTRUMENT_FX = {
   impact: 'slash',   // 段落重拍：光之巨剑劈落
   fill: 'shower',    // 过门：星辉仪朝四面书墙连射彗星
 }
+
+// 光之巨剑出场前，镜头先花这么多秒抬头转向塔顶（scene.js 的 swordLook），然后剑显形、1.28 秒后劈中
+export const SWORD_TURN = 1.4
+/**
+ * 有蓄力的大事件：特效开始后要过这么多秒才「打中」（巨剑劈到底、星辉仪爆开）。
+ * 编乐谱时把这类音符提前这么多秒打出去，打中的那一下才落在拍子上。
+ */
+export const FX_LEAD = { slash: SWORD_TURN + 1.28, swell: 1.0 }
 
 /** 特效名单（塔里能触发的全部特效） */
 export const FX_NAMES = ['beam', 'sigil', 'glitter', 'ripple', 'aurora', 'comet', 'chime', 'swell', 'slash', 'shower']
@@ -62,8 +71,12 @@ export function compileScore(score) {
       const note = typeof n === 'number' ? { b: n } : n
       if (!Number.isFinite(note.b)) continue
       if (loopBeats && (note.b < 0 || note.b >= loopBeats)) { skipped.push(`${tr.instrument ?? fx}@${note.b}`); continue }   // 循环乐谱只放一遍以内的音符
+      const hitT = offset + note.b * spb
+      let t = hitT - (FX_LEAD[fx] ?? 0)                    // 有蓄力的事件提前开始，打中的那一下落在拍子上
+      if (loopBeats) t = offset + ((((t - offset) % (loopBeats * spb)) + loopBeats * spb) % (loopBeats * spb))   // 循环乐谱：提前到第 0 拍之前的绕到上一遍末尾
       cues.push({
-        t: offset + note.b * spb,
+        t,
+        hit: hitT,
         fx,
         v: clamp01(note.v ?? tr.v ?? 1),
         p: normPitch(note.p ?? tr.p),
@@ -74,7 +87,25 @@ export function compileScore(score) {
   }
   cues.sort((a, b) => a.t - b.t)
   const loop = loopBeats * spb
-  return { cues, skipped, loop, spb, offset }
+  const sections = (Array.isArray(score.sections) ? score.sections : [])
+    .filter((s) => Number.isFinite(s?.b))
+    .map((s) => ({ t: offset + s.b * spb, name: String(s.name ?? ''), mood: s.mood ?? null }))
+    .sort((a, b) => a.t - b.t)
+  return { cues, skipped, loop, spb, offset, sections }
+}
+
+/**
+ * 乐谱时间 t（秒，和 cue.t 同一把尺子）落在哪一段：返回 sections 里最后一个开始时刻 ≤ t 的那段，
+ * 第一段之前（或没写段落）返回 null。循环乐谱按循环长度取模。
+ */
+export function sectionAt(compiled, t) {
+  const { sections = [], loop = 0 } = compiled, offset = compiled.offset ?? 0
+  if (!sections.length || !Number.isFinite(t)) return null
+  let ph = t - offset
+  if (loop) { if (ph < 0) return null; ph %= loop }
+  let cur = null
+  for (const s of sections) { if (s.t - offset <= ph + 1e-9) cur = s; else break }
+  return cur
 }
 
 /**

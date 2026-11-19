@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { compileScore, DEMO_SCORE, FX_NAMES, INSTRUMENT_FX, makeCursor, normPitch } from '../themes/magic-tower/src/score.js'
+import { readFileSync } from 'node:fs'
+import { compileScore, DEMO_SCORE, FX_LEAD, FX_NAMES, INSTRUMENT_FX, makeCursor, normPitch, sectionAt } from '../themes/magic-tower/src/score.js'
 
 describe('magic-tower score → fx cues', () => {
   it('turns beats into seconds and maps instruments to their default effect', () => {
@@ -79,5 +80,62 @@ describe('magic-tower score → fx cues', () => {
     expect(loop).toBeCloseTo(32 * 60 / 112)
     expect(cues.every((c) => FX_NAMES.includes(c.fx) && c.t >= 0 && c.t < loop)).toBe(true)
     expect(new Set(Object.values(INSTRUMENT_FX))).toEqual(new Set(FX_NAMES))
+  })
+})
+
+describe('magic-tower score: lead-in, sections and the Star Well BGM', () => {
+  it('starts wound-up events early so their hit lands on the beat, wrapping into the previous pass of a loop', () => {
+    const { cues } = compileScore({ bpm: 60, loopBeats: 8, tracks: [{ instrument: 'impact', notes: [4, 0.5] }, { instrument: 'crash', notes: [2] }] })
+    const slash4 = cues.find((c) => c.fx === 'slash' && c.hit === 4)
+    expect(slash4.t).toBeCloseTo(4 - FX_LEAD.slash)
+    expect(cues.find((c) => c.fx === 'slash' && c.hit === 0.5).t).toBeCloseTo(8 + 0.5 - FX_LEAD.slash)   // 0.5 - 1.28 < 0 → end of the loop
+    expect(cues.find((c) => c.fx === 'swell').t).toBeCloseTo(2 - FX_LEAD.swell)
+    expect(cues.every((c, i) => i === 0 || c.t >= cues[i - 1].t)).toBe(true)
+  })
+
+  it('finds the section a score time falls in, modulo the loop', () => {
+    const c = compileScore({ bpm: 60, loopBeats: 8, sections: [{ name: 'a', b: 0, mood: 'walk' }, { name: 'b', b: 4, mood: 'freeze' }], tracks: [] })
+    expect(sectionAt(c, -1)).toBeNull()
+    expect(sectionAt(c, 0).name).toBe('a')
+    expect(sectionAt(c, 4).mood).toBe('freeze')
+    expect(sectionAt(c, 9).name).toBe('a')
+    expect(sectionAt(c, 13.5).name).toBe('b')
+    expect(sectionAt(compileScore({ bpm: 60, tracks: [] }), 3)).toBeNull()
+  })
+
+  const bgm = JSON.parse(readFileSync(new URL('../themes/magic-tower/music/out/star-well.score.json', import.meta.url), 'utf8'))
+  const compiled = compileScore(bgm)
+  const rate = (name) => {
+    const i = compiled.sections.findIndex((s) => s.name === name), a = compiled.sections[i].t, b = compiled.sections[i + 1]?.t ?? compiled.loop
+    return compiled.cues.filter((c) => c.hit >= a && c.hit < b).length / (b - a)
+  }
+
+  it('the bundled BGM visual score compiles whole: 34 bars of 3/4 at 72 BPM = 85 s, nothing skipped', () => {
+    expect(compiled.skipped).toEqual([])
+    expect(compiled.loop).toBe(85)
+    expect(compiled.sections.map((s) => s.mood)).toEqual(['calm', 'calm', 'full', 'walk', 'hush', 'walk'])
+  })
+
+  it('stays quiet: under two effects a second, no drum effects, big events never overlap', () => {
+    expect(compiled.cues.length / compiled.loop).toBeLessThan(2)
+    expect(compiled.cues.filter((c) => ['beam', 'sigil', 'glitter', 'shower'].includes(c.fx))).toEqual([])
+    const LEN = { slash: 1.4 + 2.7 + 1.8, swell: 2.6 }                 // the sword includes the camera turning up and back
+    const big = compiled.cues.filter((c) => c.fx in LEN)
+    expect(big.map((c) => c.fx)).toEqual(['slash', 'swell', 'slash'])
+    big.forEach((c, i) => { if (i) expect(c.t).toBeGreaterThanOrEqual(big[i - 1].t + LEN[big[i - 1].fx]) })
+  })
+
+  it('the first sword lands on the top of the rise, after the climb into the tower has begun', () => {
+    const rise = compiled.sections.find((s) => s.name === 'rise').t
+    const sword = compiled.cues.find((c) => c.fx === 'slash')
+    expect(rise).toBe(15)
+    expect(sword.hit).toBe(25)
+    expect(sword.t).toBeGreaterThan(rise + 4.2)          // the camera starts turning up once the enter transition (4.2 s) is over
+  })
+
+  it('the picture follows the music: the rise is the busiest, the breath and the intro the stillest', () => {
+    expect(rate('rise')).toBeGreaterThan(rate('A'))
+    expect(rate('breath')).toBeLessThan(rate('A'))
+    expect(rate('intro')).toBeLessThan(rate('A'))
   })
 })

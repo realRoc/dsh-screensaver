@@ -9,10 +9,14 @@
 // 屏保外壳是新版（saver.json 写了 "hud": true）时，右上角状态栏、底部提示、触控 ID 反馈也由主题画，位置跟外壳一样。
 import { banner, demoSeal, renderLedger, setHint, setStatus, showHud, touched, TX, ZH } from './hud.js'
 import { magicTower as tower } from './scene.js'
-import { DEMO_SCORE } from './score.js'
+import { compileScore, DEMO_SCORE, sectionAt } from './score.js'
+import BGM from '../music/out/star-well.score.json'
 
 const $ = (id) => document.getElementById(id)
 const DEMO = location.hash.includes('demo')
+// #demo,bgm,record：录视频。不开动画循环，由录制脚本（music/record.mjs）调 __magicTower.rec.frame(dt) 一帧一帧推；
+// 不出声（音轨录完再合进去），界面全藏，按 REC_TIMELINE 的时刻进塔、离塔
+const REC = DEMO && location.hash.includes('record')
 const GRACE = DEMO ? 3 : 15
 const OPEN_HOLD = 3, IDLE_HOLD = 1.5
 const isLive = (s) => s.status === 'running' || s.status === 'waiting'
@@ -63,7 +67,8 @@ tower.onFrame((dt) => {
   demoTick(dt)
   const running = sessions.some(isLive)
   const mode = tower.mode
-  if (mode === 'idle' && running && tower.modeT > (climbStart ? IDLE_HOLD : OPEN_HOLD)) tower.enter()
+  if (REC) { /* 录视频：进塔、离塔按时间表来 */ }
+  else if (mode === 'idle' && running && tower.modeT > (climbStart ? IDLE_HOLD : OPEN_HOLD)) tower.enter()
   else if (mode === 'run') {
     idleT = running ? 0 : idleT + dt
     if (idleT > GRACE && tower.modeT > 3) tower.leave()
@@ -124,20 +129,72 @@ if (DEMO) {
     [54, () => finish(demo.find((x) => x.name === D.d), 'aborted')],
     [64, () => demo.filter(isLive).forEach((s) => finish(s, 'done'))],
   ]
-  // #demo,fxgallery：进塔后每种乐器特效轮流放一遍，屏幕上写着名字；#demo,groove：按演示乐谱（src/score.js 的 DEMO_SCORE）打特效。
-  // 这两种都一直待在塔里（会话不结束），方便看、方便录。
-  const FX_SHOW = location.hash.includes('fxgallery') ? 'gallery' : location.hash.includes('groove') ? 'groove' : null
+  // #demo,fxgallery：进塔后每种乐器特效轮流放一遍，屏幕上写着名字；#demo,groove：按演示乐谱（src/score.js 的 DEMO_SCORE）打特效；
+  // #demo,bgm：放原创 BGM《星井》（music/ 里生成），特效跟着音频的播放位置打（音频和视觉谱出自同一份音符表）。
+  // 这几种都一直待在塔里（会话不结束），方便看、方便录。
+  const FX_SHOW = location.hash.includes('fxgallery') ? 'gallery' : location.hash.includes('groove') ? 'groove' : location.hash.includes('bgm') ? 'bgm' : null
   if (FX_SHOW) SCRIPT.length = 1
   const FX_ZH = { beam: '天光坠落 · 底鼓', sigil: '法阵 · 军鼓', glitter: '星芒 · 镲', ripple: '地脉 · 贝斯', aurora: '极光 · 铺底/弦乐', comet: '流星 · 主旋律', chime: '灯链 · 琶音/钟琴', swell: '星辉脉冲 · 重音', slash: '光之巨剑 · 段落重拍', shower: '彗星齐射 · 过门' }
   const fxLabel = FX_SHOW && Object.assign(document.body.appendChild(document.createElement('div')), { id: 'fxLabel' })
-  let fxStarted = false
+  let fxStarted = false, bgmTick = null
+  // BGM：浏览器不让没点过页面就出声，放不出来就提示点一下。乐谱时间 = 第几遍 × 循环长度 + 这一遍的播放位置，
+  // 循环接头处 currentTime 跳回 0 时也一直往前走，光标不会把第 0 拍漏掉。
+  // 音频文件加载不了（没有 music/out、浏览器拦了）就不出声，用塔自己的时钟照样按乐谱打特效。
+  function playBgm() {
+    const audio = Object.assign(new Audio('music/out/star-well-loop.m4a'), { loop: true, preload: 'auto' })
+    const compiled = compileScore(BGM), LOOP = compiled.loop
+    let laps = 0, last = 0, playing = false, silent = null  // silent：没声音时自己数的秒数
+    const clock = () => {
+      if (silent !== null) return silent
+      if (!playing) return -1                               // 还没出声：停在预备时间里，什么都不打
+      const a = Math.min(audio.currentTime, LOOP)
+      if (a + LOOP / 2 < last) laps++
+      last = a
+      return laps * LOOP + a
+    }
+    const goSilent = () => { if (silent === null) { silent = playing ? clock() : 0; playing = true } }
+    audio.addEventListener('error', goSilent)
+    const SEC_ZH = { intro: '前奏', build: '蓄势', rise: '升腾 · 进塔', A: 'A 段', breath: '静息', A2: 'A′ 段' }
+    const title = ZH ? '星井 · 3/4 · 72 BPM' : 'Star Well · 3/4 · 72 BPM'
+    const start = () => audio.play().then(() => { playing = true }, () => {
+      if (audio.error) return goSilent()                    // 文件本身加载失败（不是等用户点）：不出声，照样打特效
+      if (silent === null) fxLabel.textContent = ZH ? '点一下开始放 BGM' : 'Click to play the BGM'
+    })
+    for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, (e) => { if (!playing && e.key !== 'm' && e.key !== 'M') start() })
+    // M：暂停 / 接着放（超过 3 秒的声音要能停，WCAG 1.4.2）。暂停时播放位置不动，特效也跟着停在原处
+    addEventListener('keydown', (e) => { if ((e.key === 'm' || e.key === 'M') && playing && silent === null) audio.paused ? audio.play() : audio.pause() })
+    tower.fx.play(BGM, { clock })
+    start()
+    bgmTick = (dt) => {
+      if (silent !== null && tower.mode === 'run') silent += dt
+      if (!playing) return
+      const s = sectionAt(compiled, clock())
+      const note = silent !== null ? (ZH ? '（无声）' : ' (muted)') : audio.paused ? (ZH ? '（已暂停，按 M 继续）' : ' (paused · M to resume)') : ''
+      fxLabel.textContent = `${title}${note} · ${s ? (ZH ? SEC_ZH[s.name] ?? s.name : s.name) : ''}`
+    }
+    window.__magicTower.bgm = { audio, clock, compiled, get silent() { return silent } }
+  }
   let demoT = 0, idx = 0, auto = true, progT = 0
+  // 录视频的时间表（秒，0 = 曲子第一拍）：书房里听前奏和蓄势，第 13.65 秒扎进书里——
+  // 书页光爆（进塔转场的第 1.35 秒）正好落在升腾段第一拍（15 秒），俯冲进塔时全体奏响，第 25 秒最高点光之巨剑落下；
+  // 尾声的 D 小调和弦响起来（85 秒）之后，一本书飞到镜头前，回到书房
+  const REC_TIMELINE = { enter: 13.65, leave: 86.2 }
+  let recT = 0, recStarted = false
   demoTick = (dt) => {
+    if (REC) {
+      if (!recStarted) { recStarted = true; tower.fx.play(BGM, { clock: () => recT }) }
+      recT += dt
+      if (tower.mode === 'idle' && recT >= REC_TIMELINE.enter && recT < REC_TIMELINE.leave) tower.enter()
+      if (tower.mode === 'run' && recT >= REC_TIMELINE.leave) tower.leave()
+      return
+    }
     if (FX_SHOW && !fxStarted && tower.mode === 'run') {
       fxStarted = true
       if (FX_SHOW === 'gallery') tower.fx.gallery((name) => { fxLabel.textContent = ZH ? FX_ZH[name] : name })
+      else if (FX_SHOW === 'bgm') playBgm()
       else { tower.fx.play(DEMO_SCORE, 0.5); fxLabel.textContent = ZH ? '演示节奏 112 BPM' : 'Demo groove · 112 BPM' }
     }
+    if (bgmTick) bgmTick(dt)
     if (auto) {
       demoT += dt
       while (idx < SCRIPT.length && demoT >= SCRIPT[idx][0]) SCRIPT[idx++][1]()
@@ -189,6 +246,25 @@ if (DEMO) {
     /** 不靠 requestAnimationFrame 往前推 sec 秒（页面在后台时用来截图检查），跟 __subspace.step 一样 */
     step: (sec, fps = 30) => tower.simulate(sec, fps),
   }
+  const BGM_C = compileScore(BGM)
+  if (REC) {
+    auto = false
+    setPure(true)
+    dev.hidden = true
+    tower.setQuality(1, 30)
+    window.__magicTower.rec = {
+      bgm: BGM, timeline: REC_TIMELINE,
+      /** 往前走 dt 秒并画一帧；返回当前的 { t, mode, section } */
+      frame(dt = 1 / 30) {
+        tower.tick(dt, true)
+        const s = sectionAt(BGM_C, recT)
+        return { t: recT, mode: tower.mode, section: s?.name ?? null }
+      },
+      /** 不画、只往前推 sec 秒（看某一刻的画面用） */
+      skip(sec, fps = 30) { for (let i = 0; i < Math.round(sec * fps); i++) tower.tick(1 / fps, false) },
+      get canvas() { return tower.canvas },
+    }
+  }
 }
 
-tower.start()
+tower.start({ manual: REC })
