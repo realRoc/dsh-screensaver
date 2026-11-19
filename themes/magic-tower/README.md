@@ -85,7 +85,7 @@ notes as beats, with optional velocity `v`, pitch `p` (0..1 or a MIDI note numbe
 ] }
 ```
 
-`magicTower.fx` exposes `trigger(name, { v, p, d })`, `play(score)`, `stop()` and `gallery()`. In the browser,
+`magicTower.fx` exposes `trigger(name, { v, p, d })` (velocity 0..1, pitch 0..1 or a MIDI note, length `d` in **seconds**), `play(score)`, `stop()` (stops a score or the gallery and drops queued effects) and `gallery()`. In the browser,
 `index.html#demo,fxgallery` plays every effect from low to high with its name on screen, and `index.html#demo,groove`
 plays an 8-bar demo score (`DEMO_SCORE`).
 

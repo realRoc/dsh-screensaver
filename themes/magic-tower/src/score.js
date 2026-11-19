@@ -37,7 +37,8 @@ export const INSTRUMENT_FX = {
 /** 特效名单（塔里能触发的全部特效） */
 export const FX_NAMES = ['beam', 'sigil', 'glitter', 'ripple', 'aurora', 'comet', 'chime', 'swell', 'slash', 'shower']
 
-const clamp01 = (x) => Math.min(1, Math.max(0, x))
+/** 0..1；不是有限数（NaN、字符串、缺省）就用 fallback，免得 NaN 一路传进闪光和泛光 */
+const clamp01 = (x, fallback = 1) => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : fallback)
 /** 音高：0..1 原样用；MIDI 音符号按 C2(36)..C7(96) 摊到 0..1 */
 export function normPitch(p) {
   if (typeof p !== 'number' || !Number.isFinite(p)) return 0.5
@@ -52,6 +53,7 @@ export function compileScore(score) {
   const bpm = Number(score?.bpm)
   if (!(bpm > 0)) throw new Error('score.bpm must be a positive number')
   const spb = 60 / bpm, offset = Number(score.offset) || 0
+  const loopBeats = Number(score.loopBeats) > 0 ? Number(score.loopBeats) : 0
   const cues = [], skipped = []
   for (const [i, tr] of (score.tracks ?? []).entries()) {
     const fx = tr.fx ?? INSTRUMENT_FX[tr.instrument]
@@ -59,42 +61,54 @@ export function compileScore(score) {
     for (const n of tr.notes ?? []) {
       const note = typeof n === 'number' ? { b: n } : n
       if (!Number.isFinite(note.b)) continue
+      if (loopBeats && (note.b < 0 || note.b >= loopBeats)) { skipped.push(`${tr.instrument ?? fx}@${note.b}`); continue }   // 循环乐谱只放一遍以内的音符
       cues.push({
         t: offset + note.b * spb,
         fx,
         v: clamp01(note.v ?? tr.v ?? 1),
         p: normPitch(note.p ?? tr.p),
-        d: Math.max(0, note.d ?? 0) * spb,
+        d: (Number.isFinite(note.d) ? Math.max(0, note.d) : 0) * spb,
         track: tr.instrument ?? fx,
       })
     }
   }
   cues.sort((a, b) => a.t - b.t)
-  const loop = Number(score.loopBeats) > 0 ? score.loopBeats * spb : 0
-  return { cues, skipped, loop, spb }
+  const loop = loopBeats * spb
+  return { cues, skipped, loop, spb, offset }
 }
 
 /**
- * 播放游标：每帧传入「乐谱时间」，返回从上一帧到这一帧之间该打的 cue。
- * 有 loop 时乐谱时间按循环长度取模；跨过循环点会把末尾和开头两段都吐出来。
+ * 播放游标：每帧传入「乐谱时间」t（秒，和 cue.t 同一把尺子），返回从上一帧到这一帧之间该打的 cue。
+ *   - 循环乐谱：第 0 拍之前（offset 之前、预备时间里）什么都不放；之后按「离第 0 拍多少秒」对循环长度取模，
+ *     跨过循环点时把上一遍的末尾和下一遍的开头都吐出来。
+ *   - maxLag（秒）：一帧跨得太大（窗口在后台、离塔再进塔）时，比当前晚了 maxLag 以上的 cue 直接跳过，不一口气全打。
+ * cue 已按时间排好，用二分找区间，每帧只碰新到的几个，不扫整份乐谱。
  */
-export function makeCursor(compiled) {
-  const { cues, loop } = compiled
-  let last = -Infinity
-  const between = (a, b) => cues.filter((c) => c.t > a && c.t <= b)
+export function makeCursor(compiled, { maxLag = Infinity } = {}) {
+  const { cues, loop } = compiled, offset = compiled.offset ?? 0
+  const at = cues.map((c) => c.t - offset)                  // 每个 cue 离第 0 拍多少秒（循环乐谱里都在 [0, loop) 内）
+  const after = (x) => {                                    // 第一个 at > x 的下标
+    let lo = 0, hi = at.length
+    while (lo < hi) { const m = (lo + hi) >> 1; if (at[m] <= x) lo = m + 1; else hi = m }
+    return lo
+  }
+  let last = null                                           // 上一帧离第 0 拍多少秒；null = 还没开始
   return {
     advance(t) {
-      if (t <= last) { if (t < last) last = t - 1e-9; return [] }
-      let out
-      if (!loop || last === -Infinity) out = between(last === -Infinity ? -Infinity : last, loop ? t % loop : t)
-      else {
-        const a = ((last % loop) + loop) % loop, b = ((t % loop) + loop) % loop
-        out = Math.floor(t / loop) > Math.floor(last / loop) ? [...between(a, loop), ...between(-Infinity, b)] : between(a, b)
+      const ph = t - offset
+      if (loop && ph < 0) { last = null; return [] }        // 循环乐谱的预备时间：什么都不放
+      if (last !== null && ph <= last) { last = ph; return [] }   // 时间没往前走（或往回拨了）：从这里重新往前数
+      let lo = Math.max(last ?? -Infinity, ph - maxLag)
+      last = ph
+      if (!loop) return cues.slice(after(lo), after(ph))
+      lo = Math.max(lo, -1e-9)                              // 循环乐谱从第 0 拍算起，第 0 拍本身也要打
+      const out = []
+      for (let k = Math.floor(Math.max(lo, 0) / loop); k * loop <= ph; k++) {
+        out.push(...cues.slice(after(lo - k * loop), after(Math.min(ph - k * loop, loop))))
       }
-      last = t
       return out
     },
-    reset() { last = -Infinity },
+    reset() { last = null },
   }
 }
 

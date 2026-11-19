@@ -44,6 +44,35 @@ describe('magic-tower score → fx cues', () => {
     expect(cur.advance(7.1).map((c) => c.t)).toEqual([3])
   })
 
+  it('a looping score plays nothing during the pre-roll and only beat 0 when it starts', () => {
+    const cur = makeCursor(compileScore({ bpm: 60, loopBeats: 4, tracks: [{ instrument: 'kick', notes: [0, 3.8] }] }))
+    expect(cur.advance(-0.5)).toEqual([])
+    expect(cur.advance(-0.1)).toEqual([])
+    expect(cur.advance(0.05).map((c) => c.t)).toEqual([0])
+  })
+
+  it('stepping the demo groove through its pre-roll at 60 fps never fires the end of the loop early', () => {
+    const cur = makeCursor(compileScore(DEMO_SCORE))
+    const fired = []
+    for (let t = -0.5; t < 0.05; t += 1 / 60) fired.push(...cur.advance(t).map((c) => c.t))
+    expect(fired.length).toBeGreaterThan(0)
+    expect(fired.every((t) => t < 0.05)).toBe(true)
+  })
+
+  it('a looping score with an offset plays the notes near the end of the loop on every pass', () => {
+    const cur = makeCursor(compileScore({ bpm: 60, offset: 0.5, loopBeats: 4, tracks: [{ instrument: 'kick', notes: [0, 3.75] }] }))
+    const fired = []
+    for (let t = 0; t < 8.9; t += 0.1) fired.push(...cur.advance(t).map((c) => c.t))
+    expect(fired.filter((t) => t === 4.25).length).toBe(2)       // 3.75 beats + 0.5 s offset, once per pass
+  })
+
+  it('with maxLag, a big jump skips the cues it is too late for instead of firing them all at once', () => {
+    const cur = makeCursor(compileScore({ bpm: 60, tracks: [{ instrument: 'kick', notes: [0, 1, 2, 3] }] }), { maxLag: 0.25 })
+    expect(cur.advance(0).map((c) => c.t)).toEqual([0])
+    expect(cur.advance(2.5)).toEqual([])          // beats 1 and 2 are 1.5 s and 0.5 s late
+    expect(cur.advance(3.1).map((c) => c.t)).toEqual([3])
+  })
+
   it('the demo groove only uses known effects and every effect has an instrument', () => {
     const { cues, skipped, loop } = compileScore(DEMO_SCORE)
     expect(skipped).toEqual([])

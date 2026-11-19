@@ -9,7 +9,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { buildStudy } from './study.js';
-import { compileScore, FX_NAMES, makeCursor } from './score.js';
+import { compileScore, FX_NAMES, makeCursor, normPitch } from './score.js';
 import KN_META from '../assets/knight.json';
 import walkIndex from '../assets/knight_walk_index.png';
 import walkNormal from '../assets/knight_walk_normal.png';
@@ -2082,7 +2082,7 @@ function updateWaves(t) {
  *   swell / slash / shower    重音 / 段落重拍 / 过门：星辉仪脉冲、光之巨剑、彗星齐射（原来的三个大事件）
  * 统一入口 triggerFx(name, { v 力度 0..1, p 音高 0..1, d 时值秒 })。
  * ============================================================ */
-const FX_COL = { blue: [0.45, 0.8, 1.0], gold: [1.0, 0.8, 0.42], violet: [0.72, 0.5, 1.0], white: [0.85, 0.95, 1.0] };
+const FX_COL = { blue: [0.45, 0.8, 1.0], gold: [1.0, 0.8, 0.42] };     // 池子里的初始颜色（每次触发都会换成按音高算的颜色）
 // 音高 → 外观，所有乐器特效共用一套：
 //   低音：在塔里更低、更大更粗、更慢，深蓝紫；高音：更高、更小更细、更快，青白 → 金
 const PITCH_STOPS = [[0, [0.5, 0.32, 1.0]], [0.35, [0.38, 0.62, 1.0]], [0.65, [0.62, 0.92, 1.0]], [1, [1.0, 0.8, 0.42]]];
@@ -2110,12 +2110,15 @@ function fxPoint(spread = 1, y0 = -1, y1 = 4, d0 = 5, d1 = 9) {
 }
 // 闪光限流：整屏变亮（闪光灯 + 泛光加强）一秒最多 3 次，跟着鼓点打特效也不会连闪；系统设了「减弱动态效果」就不震屏、闪光减弱
 const flashLog = [];
+const level = (x) => (Number.isFinite(x) ? Math.min(Math.max(x, 0), 2) : 0);     // NaN / 越界的强度一律当 0 或封顶，不然一个 NaN 会让闪光、泛光永远是 NaN
 function hit({ flash: f = 0, bloom: b = 0, shake: sh = 0, res = 0, ring = 0, arm = 0, at = null } = {}) {
+  f = level(f); b = level(b); sh = level(sh); res = level(res); ring = level(ring); arm = level(arm);
   resonance = Math.max(resonance, res); ringFlare = Math.max(ringFlare, ring); armPulse = Math.max(armPulse, arm);
   if (!REDUCED_MOTION) shake = Math.max(shake, sh);
   if (f <= 0 && b <= 0) return;
   while (flashLog.length && time - flashLog[0] > 1) flashLog.shift();
-  if (flashLog.length >= 3) return;
+  // 一秒 3 次是硬上限；小闪光（光柱落点）最多占 2 次，留 1 次给巨剑、星辉脉冲这种段落高潮，鼓点再密也抢不走
+  if (flashLog.length >= 3 || (f < 0.4 && b < 0.25 && flashLog.length >= 2)) return;
   flashLog.push(time);
   const k = REDUCED_MOTION ? 0.4 : 1;
   flash = Math.max(flash, f * k); bloomBoost = Math.max(bloomBoost, b * k);
@@ -2126,6 +2129,7 @@ const VOL_VERT = /* glsl */`
   void main(){ vUv = uv; vec4 mv = modelViewMatrix*vec4(position,1.0); vV = -mv.xyz; vN = normalize(normalMatrix*normal); gl_Position = projectionMatrix*mv; }`;
 
 // ---- beam：天光坠落。一根真的圆柱（不是转向镜头的面片），按视线和表面的夹角算出中间亮、边缘柔，绕着看都是立体的光柱
+const BEAM_STRIKE = 0.12;          // 秒：光柱从塔顶劈到落点；着色器和落点冲击波共用
 const beamGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 1, true); beamGeo.translate(0, -0.5, 0);   // 顶端在原点，往下长
 const beams = Array.from({ length: 6 }, () => {
   const mat = new THREE.ShaderMaterial({
@@ -2135,11 +2139,11 @@ const beams = Array.from({ length: 6 }, () => {
       uniform float uTime, uAge, uPow; uniform vec3 uCol; varying vec2 vUv; varying vec3 vN, vV;
       void main(){
         float down = 1.0 - vUv.y;                                          // 0 塔顶 → 1 落点
-        float reach = clamp(uAge / 0.12, 0.0, 1.0);                        // 0.12 秒从塔顶劈到落点
+        float reach = clamp(uAge / ${BEAM_STRIKE.toFixed(3)}, 0.0, 1.0);    // 从塔顶劈到落点
         if (down > reach) discard;
         float facing = abs(dot(normalize(vN), normalize(vV)));             // 1：正对视线（柱子中线），0：轮廓
-        float life = uAge < 0.12 ? 1.0 : exp(-(uAge - 0.12) * 4.5);
-        float thin = mix(1.0, 0.3, clamp((uAge - 0.12) / 0.45, 0.0, 1.0));  // 劈下来时粗，之后收成一根细线
+        float life = uAge < ${BEAM_STRIKE.toFixed(3)} ? 1.0 : exp(-(uAge - ${BEAM_STRIKE.toFixed(3)}) * 4.5);
+        float thin = mix(1.0, 0.3, clamp((uAge - ${BEAM_STRIKE.toFixed(3)}) / 0.45, 0.0, 1.0));  // 劈下来时粗，之后收成一根细线
         float x = sqrt(max(0.0, 1.0 - facing*facing)) / thin;              // 离柱子中线多远（0..1）
         float core = exp(-x*x*40.0), body = exp(-x*x*4.0);
         float streak = 0.75 + 0.25*sin(down*90.0 - uTime*70.0);
@@ -2152,12 +2156,13 @@ const beams = Array.from({ length: 6 }, () => {
   const m = new THREE.Mesh(beamGeo, mat); m.visible = false; m.frustumCulled = false; m.renderOrder = 3; scene.add(m);
   return { m, mat, t0: -100, landed: true, at: new THREE.Vector3(), w: 1, col: FX_COL.blue, v: 1, size: 1 };
 });
-let beamNext = 0;
+let beamNext = 0, lastBeamT = -100;
 function fxBeam({ v = 1, p = 0.5, at = null, col = null } = {}) {
   const b = beams[beamNext], st = pitchStyle(p); beamNext = (beamNext + 1) % beams.length;
+  const crowded = time - lastBeamT < 1 / 3; lastBeamT = time;      // 光柱本身也是一道整屏高的亮光：1/3 秒内的下一道调暗到三成
   b.at.copy(at ?? fxPoint(1, st.y - 1, st.y + 1)); b.t0 = time; b.landed = false; b.v = v; b.col = col ?? st.col; b.size = st.size;
   b.w = (0.45 + 0.75 * v) * st.size;
-  b.mat.uniforms.uCol.value.setRGB(...b.col); b.mat.uniforms.uPow.value = 0.5 + 0.5 * v;
+  b.mat.uniforms.uCol.value.setRGB(...b.col); b.mat.uniforms.uPow.value = (0.5 + 0.5 * v) * (crowded ? 0.3 : 1);
 }
 function updateBeams(t) {
   const topY = camera.position.y + TOP_OFF - 2;
@@ -2167,7 +2172,7 @@ function updateBeams(t) {
     if (!b.m.visible) continue;
     b.m.position.set(b.at.x, topY, b.at.z); b.m.scale.set(b.w, topY - b.at.y, b.w);
     b.mat.uniforms.uAge.value = age;
-    if (!b.landed && age >= 0.12) {
+    if (!b.landed && age >= BEAM_STRIKE) {
       b.landed = true;
       startWave(b.at.y, (1.8 + 2.6 * b.v) * b.size, b.col, b.at.x, b.at.z, 0.9);
       spawnBurst(b.at, b.col, (0.5 + 0.8 * b.v) * b.size, 0);
@@ -2222,7 +2227,10 @@ let sigilNext = 0;
 function fxSigil({ v = 1, p = 0.5, at = null, col = null } = {}) {
   const g = sigils[sigilNext], st = pitchStyle(p); sigilNext = (sigilNext + 1) % sigils.length;
   const th = rand(0, Math.PI * 2), off = rand(0, 1.0);
-  g.at.copy(at ?? new THREE.Vector3(off * Math.cos(th), camera.position.y + st.y + rand(-0.5, 0.5), off * Math.sin(th)));
+  // 法阵是平铺的：离镜头视线高度太近就成了一条线。低音压到视线下面（俯看），高音抬到上面（仰看），中间至少隔 1.2
+  let dy = lerp(-1.8, 9, p) + rand(-0.3, 0.3);
+  if (Math.abs(dy) < 1.2) dy = dy < 0.2 ? -1.2 : 1.2;
+  g.at.copy(at ?? new THREE.Vector3(off * Math.cos(th), camera.position.y + dy, off * Math.sin(th)));
   g.t0 = time; g.broke = false; g.v = v; g.seed = rand(0, 6.28); g.col = col ?? st.col;
   g.R = Math.min(4.3 - off, 3.3 * st.size * (0.85 + 0.15 * v));
   for (const L of g.layers) { L.mat.uniforms.uCol.value.setRGB(...g.col); L.mat.uniforms.uPow.value = 0.45 + 0.4 * v; }
@@ -2425,6 +2433,7 @@ function fxChime({ v = 1, p = 0.5, col = null } = {}) {
   c.glow.material.color.setRGB(c.col[0] * 3, c.col[1] * 3, c.col[2] * 3);
 }
 function updateChimes(t) {
+  if (!chimes.some((c) => c.on)) return;        // 没有灯链在跑：不用每帧重传粒子缓冲
   chimes.forEach((c, i) => {
     if (!c.on) return;
     const k = (t - c.t0) / c.dur;
@@ -2627,13 +2636,14 @@ const PHRASES = {
 };
 let ringFlare = 0, armPulse = 0, ambientI = 0;
 const pendingFx = [];                     // 排着队等打的特效 [时刻, 名字, 参数]
-let scoreRun = null, gallery = null;
+let scoreRun = null, gallery = null, evClock = 0;
 function startEvent(type) { ev = { t0: time, type, n: 0 }; }
 function endEvent(t) { ev = null; nextEvent = Math.max(nextEvent, t + rand(5.5, 8.5)); }
 function queueFx(list, t0 = time) { for (const [dt, name, o] of list) pendingFx.push([t0 + dt, name, o]); }
 /** 打一个特效。name 见 FX_NAMES；o = { v 力度 0..1, p 音高 0..1, d 时值秒 } */
-function triggerFx(name, o = {}) {
+function triggerFx(name, opts = {}) {
   const camY = camera.position.y;
+  const o = { v: Number.isFinite(opts.v) ? Math.min(Math.max(opts.v, 0), 1) : 1, p: normPitch(opts.p), d: Number.isFinite(opts.d) ? Math.max(0, opts.d) : 0 };
   switch (name) {
     case 'beam': return fxBeam(o);
     case 'sigil': return fxSigil(o);
@@ -2641,15 +2651,17 @@ function triggerFx(name, o = {}) {
     case 'ripple': return fxRipple(o);
     case 'aurora': return fxAurora(o);
     case 'chime': return fxChime(o);
-    case 'comet': return spawnComet(camY, null, o.p ?? Math.random());
+    case 'comet': return spawnComet(camY, null, o.p);
     case 'swell': return startEvent('pulse');
     case 'slash': return startEvent('sword');
     case 'shower': return startEvent('shower');
   }
 }
-/** 按乐谱打特效（乐谱格式见 src/score.js）；delay 秒后从第 0 拍开始 */
-function playScore(score, delay = 0) { scoreRun = { cursor: makeCursor(compileScore(score)), t0: time + delay }; gallery = null; }
-function stopScore() { scoreRun = null; }
+/** 换播放方式（乐谱 / 画廊 / 停）时先清场：排队的特效、正在演的大事件都不带进下一段 */
+function clearStage() { pendingFx.length = 0; ev = null; }
+/** 按乐谱打特效（乐谱格式见 src/score.js）；delay 秒后从第 0 拍开始。晚了 0.25 秒以上的音符直接跳过，不补打 */
+function playScore(score, delay = 0) { clearStage(); scoreRun = { cursor: makeCursor(compileScore(score), { maxLag: 0.25 }), t0: time + delay }; gallery = null; }
+function stopScore() { clearStage(); scoreRun = null; gallery = null; nextEvent = Math.max(nextEvent, time + 2); }
 /** 演示：每种特效轮流放一遍（onName(name) 告诉页面现在放的是哪个） */
 const GALLERY = {      // 每种都从低音走到高音，看得出音高怎么变；极光是三个音错开起止的和弦
   beam: [[0, { v: 1, p: 0 }], [0.6, { v: 0.9, p: 0.33 }], [1.2, { v: 0.9, p: 0.66 }], [1.8, { v: 1, p: 1 }]],
@@ -2661,11 +2673,18 @@ const GALLERY = {      // 每种都从低音走到高音，看得出音高怎么
   chime: [[0, { p: 0.1 }], [1.1, { p: 0.9 }]],
   swell: [[0, {}]], slash: [[0, {}]], shower: [[0, {}]],
 };
-function playGallery(onName) { gallery = { next: time + 0.5, i: 0, onName }; scoreRun = null; }
+function playGallery(onName) { clearStage(); gallery = { next: time + 0.5, i: 0, onName }; scoreRun = null; }
 
 function updateEvents(t, camY) {
   blade.visible = false; slashArc.visible = false; swordTipGlow.visible = false;
-  if (mode === 'run') {
+  const dt = Math.max(0, t - evClock); evClock = t;
+  if (mode !== 'run') {
+    // 进塔、离塔的转场里（书房里塔的时钟停着）：乐谱和画廊的时钟一起停，排队的特效作废，
+    // 不然再进塔时这几秒错过的特效会在同一帧全部打出来
+    pendingFx.length = 0;
+    if (scoreRun) scoreRun.t0 += dt;
+    if (gallery) gallery.next += dt;
+  } else {
     if (scoreRun) for (const c of scoreRun.cursor.advance(t - scoreRun.t0)) triggerFx(c.fx, c);
     else if (gallery) {
       if (t >= gallery.next) {
@@ -2763,7 +2782,8 @@ function update(dt) {
 
   updateEvents(time, camera.position.y);
   // 走路帧：每两级台阶一个循环；着地那一帧在脚下迸一点辉光
-  const cyc = ((knS / 2) % 1 + 1) % 1, f = Math.min(KN_META.frames - 1, Math.floor(cyc * KN_META.frames));
+  const WF = KN_META.anims.walk.frames ?? KN_META.frames;     // 走路表自己的帧数（和精灵表宽度对得上）
+  const cyc = ((knS / 2) % 1 + 1) % 1, f = Math.min(WF - 1, Math.floor(cyc * WF));
   if (f !== lastFrame) {
     if (lastFrame !== -1 && (f === 2 || f === 6)) spawnBurst(knightPixel(f === 2 ? 35 : 45, 70, new THREE.Vector3()).add(new THREE.Vector3(0, 0.03, 0)), [0.45, 0.75, 1.0], 0.2, 0);
     lastFrame = f;

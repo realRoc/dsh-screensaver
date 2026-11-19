@@ -130,7 +130,6 @@ if (DEMO) {
   if (FX_SHOW) SCRIPT.length = 1
   const FX_ZH = { beam: '天光坠落 · 底鼓', sigil: '法阵 · 军鼓', glitter: '星芒 · 镲', ripple: '地脉 · 贝斯', aurora: '极光 · 铺底/弦乐', comet: '流星 · 主旋律', chime: '灯链 · 琶音/钟琴', swell: '星辉脉冲 · 重音', slash: '光之巨剑 · 段落重拍', shower: '彗星齐射 · 过门' }
   const fxLabel = FX_SHOW && Object.assign(document.body.appendChild(document.createElement('div')), { id: 'fxLabel' })
-  if (fxLabel) fxLabel.style.cssText = 'position:fixed;inset-block-start:6vh;inset-inline:0;text-align:center;font:600 22px/1.4 system-ui,sans-serif;color:#e8f2ff;text-shadow:0 0 12px #3a7bd5;pointer-events:none'
   let fxStarted = false
   let demoT = 0, idx = 0, auto = true, progT = 0
   demoTick = (dt) => {

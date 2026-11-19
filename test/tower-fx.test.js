@@ -27,8 +27,18 @@ describe('magic-tower instrument effects', () => {
     for (const name of FX_NAMES) expect(labels).toMatch(new RegExp(`\\b${name}: '`))
   })
 
-  it('the built index.html is up to date with the effects (run node scripts/build.mjs after editing src/)', () => {
+  it('the built index.html contains the effects code (only a marker check, not a full build comparison: rebuild with node scripts/build.mjs after editing src/)', () => {
     for (const marker of ['fxgallery', 'groove', '"glitter"', '"chime"']) expect(html).toContain(marker)   // 打包后字符串都是双引号
+  })
+
+  it('the demo effect label in src/index.html uses the theme type and fades out in pure mode like the rest of the interface', () => {
+    const template = text('themes/magic-tower/src/index.html')
+    const rule = template.match(/^\s*#fxLabel \{[^}]*\}/m)?.[0] ?? ''      // 它自己的那条规则（不是纯享模式那行合并选择器）
+    expect(rule).toContain('var(--serif)')
+    expect(rule).toContain('var(--gold-hi)')
+    const pure = template.split('\n').find((l) => l.includes('body.pure #ledger')) ?? ''
+    expect(pure).toContain('body.pure #fxLabel')
+    expect(main).not.toContain('fxLabel.style')       // 样式只在模板里，不在脚本里写死
   })
 })
 
