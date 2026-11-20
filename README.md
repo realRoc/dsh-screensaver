@@ -82,7 +82,7 @@ is used instead.
 
 - **Start:** ⌃⌥⌘L (Control+Option+Command+L), `/screensaver` in dsh, or ask your agent ("I'm stepping away, cover the
   screen"); it calls the `screensaver` tool. You can also start it automatically after N idle minutes.
-- **Unlock:** touch the Touch ID sensor. Pressing any key or clicking shows a password field at the bottom: type the login password and press Return. As on the macOS lock screen, Touch ID keeps working while the field is open. Esc or 30 seconds of inactivity hides it.
+- **Unlock:** touch the Touch ID sensor. Pressing any key or clicking shows a password field at the bottom: type the login password and press Return. As on the macOS lock screen, Touch ID keeps working while the field is open. Esc or 30 seconds of inactivity hides it. Like the lock screen, wrong passwords are throttled: from the 5th failure in a row you wait 1, 5, 15, then 60 minutes before the next try (Touch ID still works). Account-policy problems (locked, disabled or expired accounts, an unreachable directory) go to the system dialog instead.
 - **Pure mode:** after 30 seconds without input, the hint, the status bar and the session list fade out and only the
   animation is left. Moving the mouse, pressing a key or touching Touch ID brings them back.
 

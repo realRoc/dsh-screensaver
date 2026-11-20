@@ -354,36 +354,56 @@ export class Screensaver {
   listen() {
     if (!this.active || this.authing || this.listener || this.listenOff || !this.helper) return
     const lang = saverLang()
-    const child = spawn(this.helper, ['--listen', '--lang', lang, REASON[lang]], { stdio: ['ignore', 'pipe', 'pipe'] })
+    // --state：密码输错的次数、要等到什么时候（照着锁屏防暴力试密码），存在数据目录里，desk-unlock 重起也不清零
+    const state = join(dataDir(), 'unlock-throttle.json')
+    const child = spawn(this.helper, ['--listen', '--lang', lang, '--state', state, REASON[lang]], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
     this.listener = child
     let out = ''
+    /** 这个 desk-unlock 说过密码框开着：它退出时（崩了、被我们停了）替它告诉页面收起来了，不然页面一直以为有人在打字 */
+    let typing = false
+    const send = (channel, ...args) => {
+      const win = this.kioskWin
+      if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
+    }
     // 摸到传感器打一行 touch match（认出来了）/ touch miss（没认出来）：让主屏把 30 秒后藏起来的提示、状态栏露出来，
     // 自己画提示的主题（"hud": true）还拿它做反馈。老版本只打 touch。
     // 输出一块块来，一行可能被切成两块，所以先拼成整行再认
-    // 密码框出来、收起、输错、核对超时、上一次还没回来打 typing on / typing off / password wrong / timeout / busy：
-    // 转成 saver:typing（on / off / wrong / timeout / busy），屏保把提示、状态栏露出来，打字期间不进纯享，输错、超时底部那行字说一声
+    // 密码框出来、收起、输错、核对超时、上一次还没回来、要等打 typing on / typing off / password wrong / timeout / busy /
+    // throttled <秒>：转成 saver:typing（on / off / wrong / timeout / busy / throttled，后者再带秒数），
+    // 屏保把提示、状态栏露出来，打字期间不进纯享，输错、超时、要等底部那行字说一声
     const readLine = lineReader((line) => {
       const ev = listenerEvent(line)
-      const win = this.kioskWin
-      if (ev && win && !win.isDestroyed()) win.webContents.send(ev.channel, ev.value)
+      if (!ev) return
+      if (ev.channel === 'saver:typing') typing = ev.value !== 'off'
+      send(ev.channel, ev.value, ...(ev.seconds === undefined ? [] : [ev.seconds]))
+    })
+    // stderr 里 warn 开头的（私有控件挂不上、核对出错……）马上记日志，不等退出
+    const readErr = lineReader((line) => {
+      if (line.startsWith('warn ')) console.error(`[dsh-screensaver] Touch ID listener ${line}`)
     })
     child.stdout?.on('data', (b) => {
       out += b
       readLine(b)
     })
-    child.stderr?.on('data', (b) => (out += b))
+    child.stderr?.on('data', (b) => {
+      out += b
+      readErr(b)
+    })
     child.on('error', (e) => {
       console.error('[dsh-screensaver] Touch ID listener failed to start:', e)
       if (this.listener === child) this.listener = null
       this.listenOff = true
     })
     child.on('exit', (code) => {
+      if (typing) send('saver:typing', 'off')
       if (this.listener !== child) return // 我们自己停的
       this.listener = null
       if (process.env.DSH_SCREENSAVER_DEBUG) this.say(`[debug] Touch ID listener exited ${code}: ${out.trim()}`)
       if (code !== 0) console.error(`[dsh-screensaver] Touch ID listener exited ${code}: ${out.trim()}`)
       if (code === 0) void this.stop()
-      else if (code === 3) void this.unlock() // 老版本 desk-unlock：有人按键 / 点了一下，弹系统验证框
+      else if (code === 3) void this.unlock() // 密码核对碰到账户策略、目录服务这类错（老版本：有人按键 / 点了一下）：弹系统验证框
       else if (code === 2) this.listenOff = true
       else this.listenTimer = setTimeout(() => this.listen(), 1000) // 没摸对、被系统取消：歇一秒再等
     })

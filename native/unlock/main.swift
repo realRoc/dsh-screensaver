@@ -3,15 +3,18 @@
 //   desk-unlock [--lang zh|en] [提示语]
 //     弹系统验证框：Touch ID，不行就登录密码。等指纹那条路用不了时（没录指纹、指纹被锁……）按键 / 点屏保用它。
 //
-//   desk-unlock --listen [--lang zh|en] [提示语]
+//   desk-unlock --listen [--lang zh|en] [--state 状态文件] [提示语]
 //     照着系统锁屏：盖一层看不见的窗口在主屏上（压在屏保上面一层），自己当前台程序（Touch ID 只认前台程序），
 //     一边等指纹，一边等人输密码，两样同时都能用：
 //     - 指纹：底部放系统的 Touch ID 图标（LocalAuthenticationEmbeddedUI），摸一下传感器就解开。图标平时藏着
 //       （跟系统锁屏一样只有屏保网页上那行「使用触控 ID 或输入密码」），摸到传感器才淡出来。
 //     - 密码：有人按键或点一下，就在那行字上面出一个密码框（自己画的，不弹系统验证框，所以指纹一直在等）。
-//       回车用系统账户核对（OpenDirectory，跟登录同一套规则），密码不出这个进程。Esc 或 30 秒没动静就收起来。
-//     每次摸到传感器（不管认没认出来）打一行 touch match / touch miss；密码框出来、收起、输错打 typing on / typing off /
-//     password wrong，屏保收到就把 30 秒后藏起来的提示、状态栏再露出来。
+//       回车用系统账户核对（OpenDirectory），密码不出这个进程。Esc 或 30 秒没动静就收起来。
+//       照着锁屏防暴力试密码：连错 5 次起每次要等 1、5、15、60 分钟才能再试（等的时候指纹照样能用），
+//       失败次数记在 --state 给的文件里，进程重启不清零（见 PasswordCheck.swift）。
+//       不是「密码不对」的错（账户被锁、停用、密码过期、目录服务出错）交给系统验证框：退出码 3。
+//     每次摸到传感器（不管认没认出来）打一行 touch match / touch miss；密码框出来、收起、输错、超时、上一次还没回来、
+//     要等打 typing on / typing off / password wrong / password timeout / password busy / password throttled <秒>，屏保收到就把 30 秒后藏起来的提示、状态栏再露出来。
 //     合着盖子（系统报「closed clamshell mode」，内置传感器用不了）就先等着，盖子一开马上接着等指纹；
 //     刚打开那几秒传感器还没回来，报错也不算数。只有没录指纹、没设密码、指纹被锁才算这台电脑做不了（退出码 2）。
 //
@@ -19,7 +22,8 @@
 //     打印一行 JSON：电池（没有电池是 null）和 Wi-Fi（没有无线网卡是 null），屏保右上角的状态图标用。
 //
 // 退出码：0 验证通过；1 没通过或被取消（可以再来）；2 这台电脑做不了这种验证（没指纹、指纹被锁、没设密码……）；
-// 3 有人按键 / 点了一下、要弹系统验证框（老版本 --listen 用，现在密码框自己画，不再这样退出）。
+// 3 要弹系统验证框：老版本 --listen 有人按键 / 点了一下；现在是密码核对碰到账户策略、目录服务这类错。
+// 核对用不了、自己画的私有控件挂不上这类情况，往 stderr 打一行 warn …（屏保在进程退出时记进日志）。
 // 最后一行输出是原因。
 import AppKit
 import CoreWLAN
@@ -66,7 +70,19 @@ if args.first == "--lang", args.count > 1 {
   english = args[1] != "zh"
   args.removeFirst(2)
 }
+/// 密码失败次数、要等到什么时候存在哪（--state，屏保给数据目录里的文件）；不给就只在内存里
+var statePath: String? = nil
+if args.first == "--state", args.count > 1 {
+  statePath = args[1]
+  args.removeFirst(2)
+}
 let reason = args.first ?? (english ? "Unlock the screen saver" : "解锁屏保")
+
+/// 要弹系统验证框（退出码 3）
+func finish3() -> Never {
+  print("password")
+  exit(3)
+}
 
 func finish(_ ok: Bool, _ why: String, unavailable: Bool = false) -> Never {
   print(ok ? "ok" : (unavailable ? "unavailable \(why)" : "denied \(why)"))
@@ -139,6 +155,11 @@ while !ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory) // 不进程序坞
 
+/// 给日志看的一行（stderr，屏保不当事件）：私有控件挂不上、核对出错……
+func warn(_ line: String) {
+  FileHandle.standardError.write(("warn " + line + "\n").data(using: .utf8)!)
+}
+
 // ---- 系统指纹控件的「看不见就暂停」：关掉遮挡检测，暂停卡住了自己重开 ----
 //
 // LAAuthenticationView 觉得自己看不见（窗口不是 key、程序不在前台、被别的东西挡住）就暂停指纹比对，看得见了再接着比。
@@ -157,13 +178,19 @@ if let cls = NSClassFromString("NSOcclusionDetectionView") {
   {
     let noop: @convention(block) (AnyObject) -> Void = { _ in }
     method_setImplementation(m, imp_implementationWithBlock(noop))
+  } else {
+    warn("hook-missing NSOcclusionDetectionView._evaluateOcclusionState")
   }
   if let m = class_getInstanceMethod(cls, NSSelectorFromString("isOccluded")),
     String(cString: method_getTypeEncoding(m)!) == "B16@0:8"
   {
     let never: @convention(block) (AnyObject) -> Bool = { _ in false }
     method_setImplementation(m, imp_implementationWithBlock(never))
+  } else {
+    warn("hook-missing NSOcclusionDetectionView.isOccluded")
   }
+} else {
+  warn("hook-missing NSOcclusionDetectionView")
 }
 
 /// 比对控件现在觉得自己看不见（会暂停）是从什么时候开始的；nil = 看得见
@@ -182,6 +209,8 @@ if let cls = NSClassFromString("LACUIAuthenticationViewModel"),
     }
   }
   method_setImplementation(m, imp_implementationWithBlock(block))
+} else {
+  warn("hook-missing LACUIAuthenticationViewModel.viewVisibilityChangedToVisible:withDescription:")
 }
 
 // ---- 盖住整块主屏、看不见的窗口 ----
@@ -389,15 +418,21 @@ func shake() {
 }
 /// 核对最多等这么久：目录服务、网络账户卡住时 verifyPassword 可能一直不回来（同一时间最多一个在跑，见 PasswordCheck.swift）
 let CHECK_TIMEOUT: TimeInterval = 8
-/// 用系统账户核对（跟登录同一套规则：输错多了系统自己会锁）
-let pwCheck = PasswordCheck(timeout: CHECK_TIMEOUT) { pw in
+/// 用系统账户核对。只有「凭证不对」（kODErrorCredentialsInvalid 5000）算密码不对；账户被锁 / 停用 / 过期、
+/// 密码过期要改、目录服务连不上……都算核对不了，交给系统验证框（它知道怎么走这些账户策略）
+let pwCheck = PasswordCheck(
+  timeout: CHECK_TIMEOUT,
+  store: statePath.map { FileThrottleStore(path: $0) as ThrottleStore } ?? MemoryThrottleStore()
+) { pw in
   do {
     let node = try ODNode(session: ODSession.default(), type: ODNodeType(kODNodeTypeAuthentication))
     let rec = try node.record(withRecordType: kODRecordTypeUsers, name: NSUserName(), attributes: nil)
     try rec.verifyPassword(pw)
-    return true
+    return .ok
   } catch {
-    return false
+    let e = error as NSError
+    if e.domain == "com.apple.OpenDirectory", e.code == 5000 { return .wrong }
+    return .error("\(e.domain) \(e.code) \(e.localizedDescription)")
   }
 }
 var checking: Bool { pwCheck.waiting }
@@ -420,9 +455,15 @@ func checkPassword() {
   pwCheck.start(pw) { outcome in
     switch outcome {
     case .ok: finish(true, "password")
-    case .wrong: reopenField("password wrong")
+    // 错到要等了：直接说要等多久（这次也算进去了）
+    case .wrong(let lockedFor): reopenField(lockedFor > 0 ? "password throttled \(Int(lockedFor.rounded(.up)))" : "password wrong")
     case .timeout: reopenField("password timeout") // 框恢复能输；指纹用不了时人还能 Esc 收起来，退回系统验证框
     case .busy: reopenField("password busy", clear: false)
+    case .throttled(let wait): reopenField("password throttled \(Int(wait.rounded(.up)))")
+    case .unavailable(let why):
+      // 账户策略、目录服务这类：交给屏保弹系统验证框（退出码 3），密码不在这里试了
+      warn("password-check \(why)")
+      finish3()
     }
   }
 }
@@ -469,6 +510,7 @@ var bioIdle = true
       bioIdle = true
       // 认出来了：先让图标露半秒（不然窗口一关，淡入还没开始人就看不到），再退出关屏保
       if success {
+        pwCheck.succeeded() // 认出指纹：密码失败次数清零（跟锁屏一样）
         flashGlyph()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { finish(true, "") }
         return
@@ -500,7 +542,7 @@ func hook(_ name: String, then: @escaping () -> Void) {
   let sel = NSSelectorFromString(name)
   guard let cls = NSClassFromString("LAAuthenticationView"), let m = class_getInstanceMethod(cls, sel),
     String(cString: method_getTypeEncoding(m)!).hasPrefix("v24@0:8@16")
-  else { return }
+  else { return warn("hook-missing LAAuthenticationView.\(name)") }
   typealias Original = @convention(c) (AnyObject, Selector, AnyObject?) -> Void
   let original = unsafeBitCast(method_getImplementation(m), to: Original.self)
   let block: @convention(block) (AnyObject, AnyObject?) -> Void = { me, model in

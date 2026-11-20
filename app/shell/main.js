@@ -33,6 +33,7 @@ const T = {
     wrong: '密码不对，再试一次',
     timeout: '核对密码超时，再试一次',
     busy: '上一次还在核对，稍后再按回车',
+    throttled: (min) => `输错太多次，${min} 分钟后再试（指纹照样能用）`,
   },
   en: {
     idle: 'Enter Password',
@@ -43,6 +44,7 @@ const T = {
     wrong: 'Incorrect password. Try again',
     timeout: 'Password check timed out. Try again',
     busy: 'Still checking the last attempt. Press Return again shortly',
+    throttled: (min) => `Too many attempts. Try again in ${min} min (Touch ID still works)`,
   },
 }
 const t = T[q.get('lang') === 'zh' ? 'zh' : 'en']
@@ -96,11 +98,13 @@ desk.on('saver:touch', (result) => {
   if (hud) toTheme({ type: 'desk:touch', result: result === 'match' || result === 'miss' ? result : '' })
 })
 // desk-unlock 的密码框：on 出来了 / off 收起来了 / wrong 输错了 / timeout 核对超时 /
-// busy 上一次核对还没回来、这次没发起（输错、超时框自己晃一下、清空；这里底部那行字说一声）
-desk.on('saver:typing', (state) => {
+// busy 上一次核对还没回来、这次没发起 / throttled 输错太多次、还要等 seconds 秒
+// （框自己晃一下、清空；这里底部那行字说一声）
+desk.on('saver:typing', (state, seconds) => {
   typing = state !== 'off'
   wake()
   if (state === 'wrong' || state === 'timeout' || state === 'busy') say(t[state], 3000, 'failed')
+  else if (state === 'throttled') say(t.throttled(Math.max(1, Math.ceil(Number(seconds) / 60) || 1)), 5000, 'failed')
 })
 async function unlock() {
   if (busy) return

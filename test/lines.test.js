@@ -13,18 +13,19 @@ describe('listenerEvent: desk-unlock --listen 的输出 → 屏保页面的事�
     const read = lineReader((line) => seen.push(listenerEvent(line)))
     // 一行可能被切成两块来
     read('typing on\npassword wr')
-    read('ong\npassword timeout\npassword busy\ntyping off\n')
+    read('ong\npassword timeout\npassword busy\npassword throttled 60\ntyping off\n')
     expect(seen).toEqual([
       { channel: 'saver:typing', value: 'on' },
       { channel: 'saver:typing', value: 'wrong' },
       { channel: 'saver:typing', value: 'timeout' },
       { channel: 'saver:typing', value: 'busy' },
+      { channel: 'saver:typing', value: 'throttled', seconds: 60 },
       { channel: 'saver:typing', value: 'off' },
     ])
   })
 
   it('不认识的、退出前打的结果行不转发', () => {
-    for (const line of ['ok', 'password', 'denied -1 认证失败', 'unavailable -8 locked', 'typing', 'password right', ' typing on', ''])
+    for (const line of ['ok', 'password', 'denied -1 认证失败', 'unavailable -8 locked', 'typing', 'password right', 'password throttled', 'password throttled x', ' typing on', ''])
       expect(listenerEvent(line)).toBeNull()
   })
 })
