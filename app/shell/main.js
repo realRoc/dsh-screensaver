@@ -31,6 +31,7 @@ const T = {
     failed: (msg) => `没解开：${msg}`,
     noAuth: '这台电脑验证不了身份，点一下就开',
     wrong: '密码不对，再试一次',
+    timeout: '核对密码超时，再试一次',
   },
   en: {
     idle: 'Enter Password',
@@ -39,6 +40,7 @@ const T = {
     failed: (msg) => `Still locked: ${msg}`,
     noAuth: "This Mac can't verify identity. Click to open",
     wrong: 'Incorrect password. Try again',
+    timeout: 'Password check timed out. Try again',
   },
 }
 const t = T[q.get('lang') === 'zh' ? 'zh' : 'en']
@@ -91,11 +93,11 @@ desk.on('saver:touch', (result) => {
   reveal()
   if (hud) toTheme({ type: 'desk:touch', result: result === 'match' || result === 'miss' ? result : '' })
 })
-// desk-unlock 的密码框：on 出来了 / off 收起来了 / wrong 输错了（框自己晃一下、清空，这里底部那行字说一声）
+// desk-unlock 的密码框：on 出来了 / off 收起来了 / wrong 输错了 / timeout 核对超时（框自己晃一下、清空，这里底部那行字说一声）
 desk.on('saver:typing', (state) => {
   typing = state !== 'off'
   wake()
-  if (state === 'wrong') say(t.wrong, 3000, 'failed')
+  if (state === 'wrong' || state === 'timeout') say(t[state], 3000, 'failed')
 })
 async function unlock() {
   if (busy) return

@@ -22,7 +22,7 @@ import { execFile, spawn } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, BrowserWindow, globalShortcut, ipcMain, powerMonitor, powerSaveBlocker, screen, systemPreferences } from 'electron'
-import { lineReader } from '../lib/lines.js'
+import { lineReader, listenerEvent } from '../lib/lines.js'
 import { AgentWatcher } from './agents.js'
 import { dataDir } from './dirs.js'
 import { ensureHelper } from './helper.js'
@@ -360,15 +360,12 @@ export class Screensaver {
     // 摸到传感器打一行 touch match（认出来了）/ touch miss（没认出来）：让主屏把 30 秒后藏起来的提示、状态栏露出来，
     // 自己画提示的主题（"hud": true）还拿它做反馈。老版本只打 touch。
     // 输出一块块来，一行可能被切成两块，所以先拼成整行再认
-    // 密码框出来、收起、输错打 typing on / typing off / password wrong：转成 saver:typing（on / off / wrong），
-    // 屏保把提示、状态栏露出来，打字期间不进纯享，输错了底部那行字说一声
+    // 密码框出来、收起、输错、核对超时打 typing on / typing off / password wrong / password timeout：转成
+    // saver:typing（on / off / wrong / timeout），屏保把提示、状态栏露出来，打字期间不进纯享，输错、超时底部那行字说一声
     const readLine = lineReader((line) => {
+      const ev = listenerEvent(line)
       const win = this.kioskWin
-      if (!win || win.isDestroyed()) return
-      const m = /^touch(?: (match|miss))?$/.exec(line)
-      if (m) return win.webContents.send('saver:touch', m[1] ?? '')
-      const t = /^(?:typing (on|off)|password (wrong))$/.exec(line)
-      if (t) win.webContents.send('saver:typing', t[1] ?? t[2])
+      if (ev && win && !win.isDestroyed()) win.webContents.send(ev.channel, ev.value)
     })
     child.stdout?.on('data', (b) => {
       out += b

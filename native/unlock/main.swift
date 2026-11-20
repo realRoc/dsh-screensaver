@@ -369,7 +369,8 @@ func showPassword() {
 }
 func hidePassword() {
   pwIdleWork?.cancel()
-  guard !pwBox.isHidden, !checking else { return }
+  guard !pwBox.isHidden else { return }
+  dropCheck() // 还在核对（目录服务卡住之类）：这次作废，晚到的结果不理
   pwField.stringValue = ""
   pwBox.isHidden = true
   glyphHigh.isActive = false
@@ -386,12 +387,33 @@ func shake() {
   anim.duration = 0.4
   pwBox.layer?.add(anim, forKey: "shake")
 }
+/// 核对最多等这么久：目录服务、网络账户卡住时 verifyPassword 可能一直不回来
+let CHECK_TIMEOUT: TimeInterval = 8
 var checking = false
+/// 第几次核对：作废（超时、收起密码框）就加一，晚到的结果对不上号就不理，晚到的「对了」也不会解锁
+var checkRound = 0
+/// 把正在等的核对作废
+func dropCheck() {
+  guard checking else { return }
+  checking = false
+  checkRound += 1
+}
+/// 核对完了（或作废了）：密码框清空、能再输
+func reopenField(_ line: String) {
+  pwField.stringValue = ""
+  pwField.isEnabled = true
+  win.makeFirstResponder(pwField)
+  shake()
+  pwIdle()
+  say(line)
+}
 /// 回车：用系统账户核对（跟登录同一套规则：输错多了系统自己会锁），放到后台线程，不卡界面
 func checkPassword() {
   let pw = pwField.stringValue
   guard !pw.isEmpty, !checking else { return }
   checking = true
+  checkRound += 1
+  let round = checkRound
   pwField.isEnabled = false
   DispatchQueue.global(qos: .userInitiated).async {
     var ok = false
@@ -402,15 +424,17 @@ func checkPassword() {
       ok = true
     } catch {}
     DispatchQueue.main.async {
+      guard checking, round == checkRound else { return } // 超时了 / 收起来了：作废的那次
       checking = false
       if ok { finish(true, "password") }
-      pwField.stringValue = ""
-      pwField.isEnabled = true
-      win.makeFirstResponder(pwField)
-      shake()
-      pwIdle()
-      say("password wrong")
+      reopenField("password wrong")
     }
+  }
+  // 超时：这次作废，框恢复能输；指纹用不了时人还能 Esc 收起来，退回系统验证框
+  DispatchQueue.main.asyncAfter(deadline: .now() + CHECK_TIMEOUT) {
+    guard checking, round == checkRound else { return }
+    dropCheck()
+    reopenField("password timeout")
   }
 }
 
@@ -424,7 +448,7 @@ var bioGone: String? = nil
 /// 指纹没在比（上一轮结束、新的还没开始）
 var bioIdle = true
 
-func startBio() {
+@MainActor func startBio() {
   guard bioGone == nil else { return }
   bioRound += 1
   let round = bioRound
@@ -470,7 +494,7 @@ func startBio() {
   }
 }
 /// 指纹这次屏保里用不了了：密码框收着就退出码 2（交给屏保），开着就只靠密码，收起来时再退
-func bioFailed(_ error: Error?) {
+@MainActor func bioFailed(_ error: Error?) {
   let why = "\((error as? LAError)?.code.rawValue ?? 0) \(error?.localizedDescription ?? "")"
   bioGone = why
   bioView?.removeFromSuperview()
@@ -518,7 +542,7 @@ NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNot
 
 /// 在前台、窗口是 key，比对控件却连着这么久说自己看不见：当它卡在暂停里了，重开一轮
 let STUCK_AFTER: TimeInterval = 2
-func watchdog() {
+@MainActor func watchdog() {
   if app.isActive, win.isKeyWindow {
     if let since = bioHiddenSince, Date().timeIntervalSince(since) > STUCK_AFTER {
       startBio()
