@@ -61,7 +61,7 @@ Listen with `addEventListener('message', ...)` and check `event.source === paren
 
 // Only on the primary display, and only to themes with "hud": true. A desk:hint means the shell has handed you the
 // status bar and the hint, so show yours once it arrives (an older shell never sends it and draws its own).
-// The hint line, already localized: 'Touch ID or Enter Password', 'Verifying…', 'Still locked: …'.
+// The hint line, already localized: 'Touch ID or Enter Password', 'Verifying…', 'Still locked: …', 'Incorrect password. Try again', 'Password check timed out. Try again', 'Still checking the last attempt. Press Return again shortly', 'Too many attempts. Try again in 5 min (Touch ID still works)'.
 { type: 'desk:hint', text: 'Touch ID or Enter Password', state: 'idle' | 'verifying' | 'failed' }
 // Battery and Wi-Fi, every 20 s. null when the Mac has none or it could not be read.
 { type: 'desk:status', battery: { percent: 82, plugged: false } | null, wifi: { on: true, connected: true, rssi: -52 } | null }

@@ -1,5 +1,7 @@
 // 屏保外壳：盖住整块屏幕，里面的画面交给主题（沙盒 iframe，地址在 ?theme=）。
-// 主进程一直在等指纹（直接摸 Touch ID 就解开）；按任意键、点一下则请主进程弹系统验证框（Touch ID / 登录密码）。
+// 主进程一直在等指纹（直接摸 Touch ID 就解开）。等指纹的 desk-unlock 盖在屏保上面收键鼠，按键、点一下由它在底部
+// 出密码框（指纹照样能用），这一页只收到 saver:typing 好露出提示；它没在跑时（指纹用不了）按键、点一下才轮到
+// 这一页，请主进程弹系统验证框（Touch ID / 登录密码）。
 // 通过了主进程会关掉所有屏保窗口。
 // 主屏照着系统锁屏：底部一行「使用触控 ID 或输入密码」，右上角电池、Wi-Fi、菜单栏样式的日期时间；副屏只放主题画面。
 // 纯享：30 秒没人动，这些连同主题里的会话播报都淡掉，只剩画面；动鼠标、按键、摸 Touch ID 再露出来。
@@ -28,6 +30,10 @@ const T = {
     verifying: '请验证身份…',
     failed: (msg) => `没解开：${msg}`,
     noAuth: '这台电脑验证不了身份，点一下就开',
+    wrong: '密码不对，再试一次',
+    timeout: '核对密码超时，再试一次',
+    busy: '上一次还在核对，稍后再按回车',
+    throttled: (min) => `输错太多次，${min} 分钟后再试（指纹照样能用）`,
   },
   en: {
     idle: 'Enter Password',
@@ -35,12 +41,18 @@ const T = {
     verifying: 'Verifying…',
     failed: (msg) => `Still locked: ${msg}`,
     noAuth: "This Mac can't verify identity. Click to open",
+    wrong: 'Incorrect password. Try again',
+    timeout: 'Password check timed out. Try again',
+    busy: 'Still checking the last attempt. Press Return again shortly',
+    throttled: (min) => `Too many attempts. Try again in ${min} min (Touch ID still works)`,
   },
 }
 const t = T[q.get('lang') === 'zh' ? 'zh' : 'en']
 document.documentElement.lang = q.get('lang') === 'zh' ? 'zh-CN' : 'en'
 let IDLE_HINT = ''
 let busy = false
+/** desk-unlock 的密码框开着（有人在打字）：别进纯享、别藏指针 */
+let typing = false
 let hideTimer = 0
 let hintTimer = 0
 /** 现在底部那行字和它是哪种：idle 平时 / verifying 验证中 / failed 没解开（hud 主题拿去画） */
@@ -70,7 +82,7 @@ function setPure(on) {
 function reveal() {
   if (pure) setPure(false)
   clearTimeout(pureTimer)
-  pureTimer = window.setTimeout(() => (busy ? reveal() : setPure(true)), PURE_AFTER_MS)
+  pureTimer = window.setTimeout(() => (busy || typing ? reveal() : setPure(true)), PURE_AFTER_MS)
 }
 reveal()
 /** 鼠标动了：露出指针和提示，指针一会儿再藏 */
@@ -78,12 +90,21 @@ function wake() {
   reveal()
   document.body.classList.add('awake')
   clearTimeout(hideTimer)
-  hideTimer = window.setTimeout(() => !busy && document.body.classList.remove('awake'), 4000)
+  hideTimer = window.setTimeout(() => !busy && !typing && document.body.classList.remove('awake'), 4000)
 }
 // 摸了 Touch ID（主进程转过来的）：同样露出来；result 是 match（认出来了）/ miss（没认出来）/ ''（老版本分不出来）
 desk.on('saver:touch', (result) => {
   reveal()
   if (hud) toTheme({ type: 'desk:touch', result: result === 'match' || result === 'miss' ? result : '' })
+})
+// desk-unlock 的密码框：on 出来了 / off 收起来了 / wrong 输错了 / timeout 核对超时 /
+// busy 上一次核对还没回来、这次没发起 / throttled 输错太多次、还要等 seconds 秒
+// （框自己晃一下、清空；这里底部那行字说一声）
+desk.on('saver:typing', (state, seconds) => {
+  typing = state !== 'off'
+  wake()
+  if (state === 'wrong' || state === 'timeout' || state === 'busy') say(t[state], 3000, 'failed')
+  else if (state === 'throttled') say(t.throttled(Math.max(1, Math.ceil(Number(seconds) / 60) || 1)), 5000, 'failed')
 })
 async function unlock() {
   if (busy) return
