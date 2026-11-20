@@ -1,5 +1,5 @@
 // desk-unlock 密码框的核对状态机（native/unlock/PasswordCheck.swift）：跟 test/native/password-check/main.swift 一起编了跑。
-// 只在有 Xcode 命令行工具的 Mac 上跑，别处跳过。
+// 只在有 Xcode 命令行工具的 Mac 上跑，别处跳过；CI 上设了 DSH_SCREENSAVER_REQUIRE_SWIFT=1，必须跑。
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -17,7 +17,10 @@ function hasSwiftc() {
   }
 }
 
-describe.skipIf(!hasSwiftc())('PasswordCheck（同一时间最多一个底层核对、超时后晚到的结果不算）', () => {
+// CI 上（DSH_SCREENSAVER_REQUIRE_SWIFT=1）必须跑：没有 swiftc 就让它失败，不悄悄跳过
+const mustRun = process.env.DSH_SCREENSAVER_REQUIRE_SWIFT === '1'
+
+describe.skipIf(!mustRun && !hasSwiftc())('PasswordCheck（同一时间最多一个底层核对、超时后晚到的结果不算）', () => {
   it('对 / 错、超时 → 重试 → 旧请求晚到、取消、等待中再按回车', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pwcheck-'))
     try {

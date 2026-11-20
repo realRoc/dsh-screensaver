@@ -1,0 +1,48 @@
+# Checks for every pull request and every push to main, on macOS (the package is "os": ["darwin"]):
+# - npm test (vitest), including test/password-check.test.js, which compiles the password-check state machine
+#   (native/unlock/PasswordCheck.swift) with swiftc and runs its tests;
+# - a full build of the Touch ID helper (native/unlock/*.swift) with warnings as errors, so a change in the
+#   macOS SDK or the Swift compiler that breaks touch-to-unlock shows up here instead of on a user's Mac.
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    env:
+      NPM_REGISTRY: https://registry.npmjs.org/
+      # Tests don't launch Electron; skip its ~100 MB binary download.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      # On CI the Swift test must run, not be skipped for a missing swiftc.
+      DSH_SCREENSAVER_REQUIRE_SWIFT: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # package-lock.json points at the npmmirror registry; fetch the same tarballs
+      # (same integrity hashes) from registry.npmjs.org instead.
+      - name: Install dependencies
+        run: npm ci --registry="$NPM_REGISTRY" --replace-registry-host=always
+
+      - name: Test
+        run: npm test
+
+      - name: Build the Touch ID helper
+        run: |
+          xcrun swiftc --version
+          xcrun swiftc -O -warnings-as-errors -o "$RUNNER_TEMP/desk-unlock" native/unlock/*.swift
+          "$RUNNER_TEMP/desk-unlock" --status

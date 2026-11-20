@@ -418,8 +418,7 @@ func shake() {
 }
 /// 核对最多等这么久：目录服务、网络账户卡住时 verifyPassword 可能一直不回来（同一时间最多一个在跑，见 PasswordCheck.swift）
 let CHECK_TIMEOUT: TimeInterval = 8
-/// 用系统账户核对。只有「凭证不对」（kODErrorCredentialsInvalid 5000）算密码不对；账户被锁 / 停用 / 过期、
-/// 密码过期要改、目录服务连不上……都算核对不了，交给系统验证框（它知道怎么走这些账户策略）
+/// 用系统账户核对；错误怎么分（密码不对 / 交给系统验证框）见 VerifyResult.from(openDirectoryError:)
 let pwCheck = PasswordCheck(
   timeout: CHECK_TIMEOUT,
   store: statePath.map { FileThrottleStore(path: $0) as ThrottleStore } ?? MemoryThrottleStore()
@@ -430,9 +429,7 @@ let pwCheck = PasswordCheck(
     try rec.verifyPassword(pw)
     return .ok
   } catch {
-    let e = error as NSError
-    if e.domain == "com.apple.OpenDirectory", e.code == 5000 { return .wrong }
-    return .error("\(e.domain) \(e.code) \(e.localizedDescription)")
+    return .from(openDirectoryError: error)
   }
 }
 var checking: Bool { pwCheck.waiting }

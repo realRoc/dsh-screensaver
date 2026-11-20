@@ -232,6 +232,20 @@ do {
   check(FileThrottleStore(path: path).load().failures == 0, "unreadable file reads as zero")
 }
 
+// 9. OpenDirectory 的错误码怎么分：只有 5000 算密码不对，账户策略、目录服务这些都交给系统验证框
+do {
+  let od = "com.apple.OpenDirectory"
+  check(VerifyResult.from(openDirectoryError: NSError(domain: od, code: 5000)) == .wrong, "5000 credentials invalid → wrong")
+  for code in [5200, 5203, 5301, 5302, 5304, 5305, 5400, 5401, 5101] {
+    if case .error = VerifyResult.from(openDirectoryError: NSError(domain: od, code: code)) {} else {
+      check(false, "\(code) → error")
+    }
+  }
+  if case .error = VerifyResult.from(openDirectoryError: NSError(domain: NSCocoaErrorDomain, code: 5000)) {} else {
+    check(false, "5000 from another domain is not 'wrong'")
+  }
+}
+
 if failures == 0 {
   print("PASS")
   exit(0)

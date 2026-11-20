@@ -25,6 +25,17 @@ enum VerifyResult: Equatable {
   case error(String)
 }
 
+extension VerifyResult {
+  /// OpenDirectory 的 verifyPassword 抛出来的错 → 核对结果。只有「凭证不对」（kODErrorCredentialsInvalid 5000）
+  /// 算密码不对；账户被锁 / 停用 / 过期（53xx）、密码过期要改（54xx）、目录服务连不上（52xx）……都算核对不了，
+  /// 交给系统验证框（它知道怎么走这些账户策略）
+  static func from(openDirectoryError error: Error) -> VerifyResult {
+    let e = error as NSError
+    if e.domain == "com.apple.OpenDirectory", e.code == 5000 { return .wrong }
+    return .error("\(e.domain) \(e.code) \(e.localizedDescription)")
+  }
+}
+
 /// 失败次数、要等到什么时候；存哪儿由调用的人决定
 protocol ThrottleStore: AnyObject {
   func load() -> (failures: Int, lockedUntil: Date?)
