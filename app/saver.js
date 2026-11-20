@@ -5,13 +5,13 @@
 // - 窗口不是完全不透明（网页背景留一点点透明）：完全挡住的话 Chrome 会把被挡的窗口当成隐藏，定时器和动画降频，
 //   被挡住的浏览器里的 agent（靠扩展驱动的那种）也跟着降频。
 // - 屏保开着时不让系统睡、也不关屏；合盖睡眠也关掉（lidawake.js，lidAwake 默认开，写 false 才不管；没授权只提示一句）。
-// - 解锁两条路（都是 native/unlock/ 的 desk-unlock，LocalAuthentication）：
-//   1. 直接摸 Touch ID：屏保一开就起 `desk-unlock --listen`。它在主屏上盖一层看不见的窗口（屏保上一层），
-//      底部放系统的指纹小图标，并且自己当前台程序（Touch ID 只认前台程序，所以这期间屏保不抢焦点，
-//      Cmd+Tab 由它自己禁）。摸对了就解开；没摸对、被取消就重新等。指纹被锁、没录指纹就不再等，只剩第 2 条路。
-//   2. 按键或点一下（主屏上由 desk-unlock 收到后转过来，退出码 3）：先停掉第 1 条（传感器同一时间只给一个人用），
-//      弹系统验证框，Touch ID 不行就登录密码。
-//      验证框在 1000 层，跟屏保同一层，验证期间把屏保降到 pop-up-menu（101 层），验证框肯定在上面。没解开再回到第 1 条。
+// - 解锁照着系统锁屏，指纹和密码同时都能用（都是 native/unlock/ 的 desk-unlock）：
+//   屏保一开就起 `desk-unlock --listen`。它在主屏上盖一层看不见的窗口（屏保上一层），自己当前台程序
+//   （Touch ID 只认前台程序，所以这期间屏保不抢焦点，Cmd+Tab 由它自己禁），一边等指纹，一边收键鼠：
+//   按键或点一下就在底部那行字上面出一个它自己画的密码框，回车用系统账户核对。指纹一直在等，不用先停。
+//   摸对了 / 密码对了退出码 0，关屏保；没摸对、被系统取消退出码 1，歇一秒重新起。
+//   指纹被锁、没录指纹（退出码 2）就不再起，按键或点一下改弹系统验证框（Touch ID 不行就登录密码）：
+//   验证框在 1000 层，跟屏保同一层，验证期间把屏保降到 pop-up-menu（101 层），验证框肯定在上面。
 // - 主屏右上角跟系统菜单栏一样放电池、Wi-Fi、日期时间：`desk-unlock --status` 读（IOKit + CoreWLAN），每 20 秒一次。
 // - 屏保里放什么由主题决定（themes.js 找到的目录，沙盒 iframe 里跑）。
 //   saver.json 写了 "sessions": true 的主题，屏保开着时才去读本机 agent 会话（agents.js），推给它显示。
@@ -360,11 +360,15 @@ export class Screensaver {
     // 摸到传感器打一行 touch match（认出来了）/ touch miss（没认出来）：让主屏把 30 秒后藏起来的提示、状态栏露出来，
     // 自己画提示的主题（"hud": true）还拿它做反馈。老版本只打 touch。
     // 输出一块块来，一行可能被切成两块，所以先拼成整行再认
+    // 密码框出来、收起、输错打 typing on / typing off / password wrong：转成 saver:typing（on / off / wrong），
+    // 屏保把提示、状态栏露出来，打字期间不进纯享，输错了底部那行字说一声
     const readLine = lineReader((line) => {
-      const m = /^touch(?: (match|miss))?$/.exec(line)
-      if (!m) return
       const win = this.kioskWin
-      if (win && !win.isDestroyed()) win.webContents.send('saver:touch', m[1] ?? '')
+      if (!win || win.isDestroyed()) return
+      const m = /^touch(?: (match|miss))?$/.exec(line)
+      if (m) return win.webContents.send('saver:touch', m[1] ?? '')
+      const t = /^(?:typing (on|off)|password (wrong))$/.exec(line)
+      if (t) win.webContents.send('saver:typing', t[1] ?? t[2])
     })
     child.stdout?.on('data', (b) => {
       out += b
@@ -382,7 +386,7 @@ export class Screensaver {
       if (process.env.DSH_SCREENSAVER_DEBUG) this.say(`[debug] Touch ID listener exited ${code}: ${out.trim()}`)
       if (code !== 0) console.error(`[dsh-screensaver] Touch ID listener exited ${code}: ${out.trim()}`)
       if (code === 0) void this.stop()
-      else if (code === 3) void this.unlock() // 有人按键 / 点了一下：弹系统验证框，可以输密码
+      else if (code === 3) void this.unlock() // 老版本 desk-unlock：有人按键 / 点了一下，弹系统验证框
       else if (code === 2) this.listenOff = true
       else this.listenTimer = setTimeout(() => this.listen(), 1000) // 没摸对、被系统取消：歇一秒再等
     })
