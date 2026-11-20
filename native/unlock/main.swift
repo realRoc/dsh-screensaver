@@ -387,54 +387,43 @@ func shake() {
   anim.duration = 0.4
   pwBox.layer?.add(anim, forKey: "shake")
 }
-/// 核对最多等这么久：目录服务、网络账户卡住时 verifyPassword 可能一直不回来
+/// 核对最多等这么久：目录服务、网络账户卡住时 verifyPassword 可能一直不回来（同一时间最多一个在跑，见 PasswordCheck.swift）
 let CHECK_TIMEOUT: TimeInterval = 8
-var checking = false
-/// 第几次核对：作废（超时、收起密码框）就加一，晚到的结果对不上号就不理，晚到的「对了」也不会解锁
-var checkRound = 0
-/// 把正在等的核对作废
-func dropCheck() {
-  guard checking else { return }
-  checking = false
-  checkRound += 1
+/// 用系统账户核对（跟登录同一套规则：输错多了系统自己会锁）
+let pwCheck = PasswordCheck(timeout: CHECK_TIMEOUT) { pw in
+  do {
+    let node = try ODNode(session: ODSession.default(), type: ODNodeType(kODNodeTypeAuthentication))
+    let rec = try node.record(withRecordType: kODRecordTypeUsers, name: NSUserName(), attributes: nil)
+    try rec.verifyPassword(pw)
+    return true
+  } catch {
+    return false
+  }
 }
-/// 核对完了（或作废了）：密码框清空、能再输
-func reopenField(_ line: String) {
-  pwField.stringValue = ""
+var checking: Bool { pwCheck.waiting }
+/// 不等正在核对的那次了（收起密码框）：晚到的结果不理
+func dropCheck() { pwCheck.cancel() }
+/// 核对完了（或作废了）：密码框能再输。clear：清空并晃一下（输错、超时）；不清（上一次还没回来）留着人再按回车
+func reopenField(_ line: String, clear: Bool = true) {
+  if clear { pwField.stringValue = "" }
   pwField.isEnabled = true
   win.makeFirstResponder(pwField)
-  shake()
+  if clear { shake() }
   pwIdle()
   say(line)
 }
-/// 回车：用系统账户核对（跟登录同一套规则：输错多了系统自己会锁），放到后台线程，不卡界面
+/// 回车：交给 PasswordCheck，放到后台线程，不卡界面
 func checkPassword() {
   let pw = pwField.stringValue
   guard !pw.isEmpty, !checking else { return }
-  checking = true
-  checkRound += 1
-  let round = checkRound
   pwField.isEnabled = false
-  DispatchQueue.global(qos: .userInitiated).async {
-    var ok = false
-    do {
-      let node = try ODNode(session: ODSession.default(), type: ODNodeType(kODNodeTypeAuthentication))
-      let rec = try node.record(withRecordType: kODRecordTypeUsers, name: NSUserName(), attributes: nil)
-      try rec.verifyPassword(pw)
-      ok = true
-    } catch {}
-    DispatchQueue.main.async {
-      guard checking, round == checkRound else { return } // 超时了 / 收起来了：作废的那次
-      checking = false
-      if ok { finish(true, "password") }
-      reopenField("password wrong")
+  pwCheck.start(pw) { outcome in
+    switch outcome {
+    case .ok: finish(true, "password")
+    case .wrong: reopenField("password wrong")
+    case .timeout: reopenField("password timeout") // 框恢复能输；指纹用不了时人还能 Esc 收起来，退回系统验证框
+    case .busy: reopenField("password busy", clear: false)
     }
-  }
-  // 超时：这次作废，框恢复能输；指纹用不了时人还能 Esc 收起来，退回系统验证框
-  DispatchQueue.main.asyncAfter(deadline: .now() + CHECK_TIMEOUT) {
-    guard checking, round == checkRound else { return }
-    dropCheck()
-    reopenField("password timeout")
   }
 }
 

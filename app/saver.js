@@ -360,8 +360,8 @@ export class Screensaver {
     // 摸到传感器打一行 touch match（认出来了）/ touch miss（没认出来）：让主屏把 30 秒后藏起来的提示、状态栏露出来，
     // 自己画提示的主题（"hud": true）还拿它做反馈。老版本只打 touch。
     // 输出一块块来，一行可能被切成两块，所以先拼成整行再认
-    // 密码框出来、收起、输错、核对超时打 typing on / typing off / password wrong / password timeout：转成
-    // saver:typing（on / off / wrong / timeout），屏保把提示、状态栏露出来，打字期间不进纯享，输错、超时底部那行字说一声
+    // 密码框出来、收起、输错、核对超时、上一次还没回来打 typing on / typing off / password wrong / timeout / busy：
+    // 转成 saver:typing（on / off / wrong / timeout / busy），屏保把提示、状态栏露出来，打字期间不进纯享，输错、超时底部那行字说一声
     const readLine = lineReader((line) => {
       const ev = listenerEvent(line)
       const win = this.kioskWin
