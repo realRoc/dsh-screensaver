@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "demo": "node scripts/build.mjs && open 'index.html#demo'"
+    "demo": "node scripts/build.mjs && open 'index.html#demo'",
+    "seam": "node scripts/build.mjs && node scripts/seam.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

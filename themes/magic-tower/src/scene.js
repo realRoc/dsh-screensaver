@@ -59,6 +59,13 @@ function mulberry32(a) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+// 塔按一圈周期排布、每圈挪一次：同一样东西在每一圈的那一份要拿到同一个随机数（按它在一圈里的位置算），
+// 不然塔挪回去的那一帧，闪烁的相位、亮度会整体跳一下（scripts/seam.mjs 查出来的）
+function turnRand(p, j = 0) {
+  const span = Math.round(TURN_H * 64), y = ((Math.round(p.y * 64) % span) + span) % span;
+  let h = Math.imul(Math.round(p.x * 64), 0x85ebca6b) ^ Math.imul(Math.round(p.z * 64), 0xc2b2ae35) ^ Math.imul(y, 0x27d4eb2f) ^ Math.imul(j + 1, 0x165667b1);
+  return mulberry32(h)();
+}
 function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
 // 带色相偏移的明暗：暗部往蓝紫偏、亮部往暖黄偏
 const SHADOW_TINT = [46, 36, 96], LIGHT_TINT = [255, 238, 196];
@@ -1044,6 +1051,18 @@ const radial = (th) => new THREE.Vector3(Math.cos(th), 0, Math.sin(th));
   class Helix extends THREE.Curve {
     constructor(r, f) { super(); this.r = r; this.f = f; }
     getPoint(t, target = new THREE.Vector3()) { const s = K_MIN + t * (K_MAX - K_MIN); return target.copy(polar(this.r, s * DTH, this.f(s))); }
+    // 管子截面的朝向：three 默认的平行移动标架沿螺旋每圈多转 110°，六棱的扶手每圈棱线错开，
+    // 塔挪一圈时扶手明暗会跳（scripts/seam.mjs 查出来的）。改成法线一直朝外（半径方向），每圈一样
+    computeFrenetFrames(segs) {
+      const tangents = [], normals = [], binormals = [];
+      for (let i = 0; i <= segs; i++) {
+        const t = i / segs, T = this.getTangentAt(t, new THREE.Vector3()), p = this.getPointAt(t);
+        const N = new THREE.Vector3(p.x, 0, p.z).normalize();
+        N.addScaledVector(T, -N.dot(T)).normalize();
+        tangents.push(T); normals.push(N); binormals.push(new THREE.Vector3().crossVectors(T, N));
+      }
+      return { tangents, normals, binormals };
+    }
   }
   const segs = (K_MAX - K_MIN) * 5;
   tower.add(new THREE.Mesh(new THREE.TubeGeometry(new Helix(R_RAIL, railY), segs, 0.085, 6, false), marbleMat));
@@ -1127,7 +1146,7 @@ function lampPos(j) { const s = lampK(j) + 0.5; return polar(R_RAIL, s * DTH, ra
   list.forEach((p, i) => { m.makeTranslation(p.x, p.y + 0.185, p.z); wax.setMatrixAt(i, m); m.makeTranslation(p.x, p.y + 0.025, p.z); dish.setMatrixAt(i, m); });
   tower.add(wax, dish);
   const fp = new Float32Array(list.length * 3), fr = new Float32Array(list.length);
-  list.forEach((p, i) => { fp.set([p.x, p.y + 0.44, p.z], i * 3); fr[i] = Math.random(); });
+  list.forEach((p, i) => { fp.set([p.x, p.y + 0.44, p.z], i * 3); fr[i] = turnRand(p); });
   const fg = new THREE.BufferGeometry();
   fg.setAttribute('position', new THREE.BufferAttribute(fp, 3));
   fg.setAttribute('aRand', new THREE.BufferAttribute(fr, 1));
@@ -1168,7 +1187,7 @@ function lampPos(j) { const s = lampK(j) + 0.5; return polar(R_RAIL, s * DTH, ra
   const puddles = new THREE.InstancedMesh(puddleGeo, waxM, list.length * 3);
   const smallGeo = new THREE.CylinderGeometry(0.05, 0.06, 1, 8); smallGeo.translate(0, 0.5, 0);
   const smalls = new THREE.InstancedMesh(smallGeo, waxM, list.length * 2);
-  const fp = new Float32Array(list.length * 2 * 3), fr = new Float32Array(list.length * 2).map(() => Math.random());
+  const fp = new Float32Array(list.length * 2 * 3), fr = new Float32Array(list.length * 2);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
   list.forEach((c, i) => {
     const p = candleBase(c), th = (candleK(c) + 0.5) * DTH, tg = tangent(th), rd = radial(th);
@@ -1177,7 +1196,7 @@ function lampPos(j) { const s = lampK(j) + 0.5; return polar(R_RAIL, s * DTH, ra
       const b = p.clone().addScaledVector(tg, ot).addScaledVector(rd, orr);
       m.compose(b, q, sc.set(1, h, 1)); smalls.setMatrixAt(i * 2 + j, m);
       m.compose(b, q, sc.set(0.13, 0.025, 0.13)); puddles.setMatrixAt(i * 3 + 1 + j, m);
-      fp.set([b.x, b.y + h + 0.1, b.z], (i * 2 + j) * 3);
+      fp.set([b.x, b.y + h + 0.1, b.z], (i * 2 + j) * 3); fr[i * 2 + j] = turnRand(b);
     });
   });
   tower.add(puddles, smalls);
@@ -1302,7 +1321,7 @@ const glintMat = clipped(makeGlintMaterial());
   });
   tower.add(cr);
   const PER = 5, N = sites.length * PER, pos = new Float32Array(N * 3), rnd2 = new Float32Array(N);
-  sites.forEach((st, i) => { for (let j = 0; j < PER; j++) { pos.set([st.x, st.y, st.z], (i * PER + j) * 3); rnd2[i * PER + j] = Math.random(); } });
+  sites.forEach((st, i) => { for (let j = 0; j < PER; j++) { pos.set([st.x, st.y, st.z], (i * PER + j) * 3); rnd2[i * PER + j] = turnRand(st, j); } });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aRand', new THREE.BufferAttribute(rnd2, 1));
   const sparks = new THREE.Points(g, pointsMaterial(COMMON_GLSL + /* glsl */`
@@ -1346,7 +1365,7 @@ const glintMat = clipped(makeGlintMaterial());
     for (let c = 0; c < CANDLES; c++) {
       const a = c / CANDLES * Math.PI * 2, q = p.clone().add(new THREE.Vector3(ringR * Math.cos(a), 0.1, ringR * Math.sin(a)));
       m.makeTranslation(q.x, q.y, q.z); cand.setMatrixAt(i * CANDLES + c, m);
-      fp.set([q.x, q.y + 0.2, q.z], (i * CANDLES + c) * 3); fr[i * CANDLES + c] = Math.random();
+      fp.set([q.x, q.y + 0.2, q.z], (i * CANDLES + c) * 3); fr[i * CANDLES + c] = turnRand(q);
     }
   });
   tower.add(...parts, arms, cand);
@@ -2557,6 +2576,8 @@ function swordLook(t) {
 }
 let progress = SPT;
 let time = 0;
+// 接缝检测用（scripts/seam.mjs）：塔每爬一圈整体往上挪一圈，平时是 0；调试时拨成 ±1 看「换一圈塔」画面变不变
+let towerShift = 0;
 let freeCam = false;
 const clock = new THREE.Clock();
 const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3(), camRight = new THREE.Vector3(), camUp = new THREE.Vector3(), prevKn = new THREE.Vector3();
@@ -2831,7 +2852,7 @@ function update(dt) {
   shared.uTime.value = time;
   hd2d.uniforms.uTime.value = time;
   camSU.value = camS;
-  tower.position.y = TURN_H * Math.floor(camS / SPT);
+  tower.position.y = TURN_H * (Math.floor(camS / SPT) + towerShift);
 
   const knTh = knS * DTH;
   prevKn.copy(knight.position);
@@ -3423,4 +3444,19 @@ export const magicTower = {
     for (let i = 0; i < sec * fps; i++) { frame(1 / fps, false); for (const f of frameHooks) f(1 / fps); }
     frame(0);
   },
+  /** 调试（接缝检测 scripts/seam.mjs）：停掉动画循环，把骑士摆到第 s 级台阶、时钟拨到 t 秒、塔多挪 shift 圈，画一帧。
+   *  不推进时间、不起随机事件，同样的参数画出来的帧一模一样 */
+  pose(s, t = time, shift = 0) {
+    renderer.setAnimationLoop(null);
+    progress = s; time = t; towerShift = shift;
+    nextEvent = Infinity; lastFrame = -1;                 // 不起环境大事件；走路帧变了也不迸脚下辉光
+    clearStage();                                         // 正在演的大事件收掉，余震、闪光也归零（镜头抖动每帧带随机数）
+    shake = bloomBoost = flash = resonance = ringFlare = armPulse = 0;
+    nextComet = Infinity; bT.fill(-1e9);                  // 随机路线的流星、已经迸开的辉光都收掉（时钟会被拨来拨去）
+    comets.forEach((c, i) => { c.state = 0; c.glow.visible = false; cometTrails.hist[i].length = 0; });
+    frame(0);
+    towerShift = 0;
+  },
+  /** 塔的周期：每圈多少级台阶、骑士在镜头前多少级（塔在 s - back 是 SPT 的整数倍时整体挪一圈） */
+  loop: { SPT, back: CAM.back, SPEED },
 };
