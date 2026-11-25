@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <!-- 魔法书斋屏保的页面模板：scripts/build.mjs 把 src/*.js（连同 three.js、精灵表）打包内联进来、图标换成 data: 地址，
      输出到主题包根目录的 index.html。主题在沙盒 iframe 里跑，什么都不能从外面加载。 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; worker-src blob: data:; connect-src data: blob:; style-src 'unsafe-inline'; img-src data: blob:">
 <title>魔法书斋</title>
 <style>
   :root {

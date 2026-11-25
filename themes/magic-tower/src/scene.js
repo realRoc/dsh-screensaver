@@ -5,10 +5,11 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { UnrealBloomPass } from './vendor/UnrealBloomPass.js';   // r170 版，见文件头
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { buildStudy } from './study.js';
+import { SPLAT_KNIGHT, createSplatKnight } from './splatKnight.js';
 import { compileScore, FX_NAMES, makeCursor, normPitch, sectionAt, SWORD_TURN } from './score.js';
 import KN_META from '../assets/knight.json';
 import walkIndex from '../assets/knight_walk_index.png';
@@ -1982,6 +1983,9 @@ function setKnightLights(mesh, lights) {
 }
 const knight = makeKnightMesh('walk');
 scene.add(knight);
+// #splat：骑士换成像素风高斯泼溅（splatKnight.js）。精灵照样摆位置、转朝向但不画：剑光、脚下辉光这些按精灵像素算位置的特效照旧
+const splatKnight = SPLAT_KNIGHT ? createSplatKnight(renderer, scene, { fogColor: new THREE.Color(FOG_COLOR), fogD: shared.uFogD }) : null;
+if (splatKnight) knight.visible = false;
 const KN_FEET = KN_META.anims.walk.feetV;
 const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.6),
   new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(makeSoftCanvas('rgba(0,0,0,0.55)', 'rgba(0,0,0,0)')), transparent: true, depthWrite: false }));
@@ -2497,6 +2501,7 @@ function updateChimes(t) {
 const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
+if (splatKnight) composer.addPass(splatKnight.pass);   // 泼溅骑士那一层：紧跟场景，之后照常辉光、HD-2D
 const BLOOM_BASE = 0.7;
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), BLOOM_BASE, 0.45, 0.85);
 composer.addPass(bloom);
@@ -2932,13 +2937,24 @@ function update(dt) {
   }
   orientKnight(knight, camera, tangent(knTh), f);
   const nc = candleLights[1];
-  setKnightLights(knight, [
+  const knLights = [
     { pos: nc.position, color: [1.0, 0.7, 0.4], pow: 1.1 * Math.min(1, nc.intensity / 3), range: 6 },
     { pos: wellLight.position, color: [0.6, 0.85, 1.0], pow: 0.8, range: 10 },
     { pos: deepLight.position, color: [0.4, 0.6, 1.0], pow: 0.5, range: 12 },
     { pos: tmp3.copy(camera.position).add(moonDirU.value.clone().multiplyScalar(200)), color: [0.75, 0.9, 1.0], pow: 0.45, range: 1e4 },
-  ]);
+  ];
+  setKnightLights(knight, knLights);
   knight.material.uniforms.uGlow.value = 2.2 + resonance * 2.4 + 0.25 * Math.sin(time * 3);
+  if (splatKnight) {
+    // 关键帧之间连续插值：走路不再是 8 张图轮换
+    const SW = splatKnight.rig.anims.walk.frames, ft = cyc * SW, f0 = Math.floor(ft) % SW;
+    const tg = tangent(knTh);
+    splatKnight.group.position.copy(knight.position);
+    splatKnight.group.rotation.y = Math.atan2(tg.x, tg.z);
+    splatKnight.setPose('walk', f0, (f0 + 1) % SW, ft - Math.floor(ft));
+    splatKnight.setLights(knLights);
+    splatKnight.update(camera, knight.material.uniforms.uGlow.value);
+  }
   bladeA.value.copy(knightPixel(25, 46, tmp2));
   bladeB.value.copy(knightPixel(12, 62, tmp2));
   auraU.value = 1 + resonance * 2;
@@ -3009,13 +3025,14 @@ function makePageBurst(sceneRef, mat, N = 80) {
 const study = buildStudy({
   THREE, makeCanvas, pixelTex, spriteTex, shade, mulberry32, makeShelfTextures, makeSoftCanvas,
   pointsMaterial, flameMaterial, COMMON_GLSL, NOISE_GLSL, SOFT_POINT_FRAG, BOOK_COLORS,
-  makePageCanvas, makeCoverCanvas, makeEndpaperCanvas, makeKnightMesh, orientKnight, setKnightLights, shared,
+  makePageCanvas, makeCoverCanvas, makeEndpaperCanvas, makeKnightMesh, orientKnight, setKnightLights, shared, renderer, SPLAT_KNIGHT, createSplatKnight, FOG_COLOR,
   makePageBurst, sitHands: KN_META.sitHands, sitTurn: KN_META.sitTurn, glintGeometry, makeGlintMaterial,
   // Blender 建的书桌一角：GLB 的字节打包进来，直接解析（沙盒里不能 fetch）
   deskModel: { data: deskGlb, GLTFLoader, mergeVertices, mergeGeometries },
 });
 const studyComposer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
 studyComposer.addPass(new RenderPass(study.scene, study.camera));
+if (study.splatKnight) studyComposer.addPass(study.splatKnight.pass);
 const studyBloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.42, 0.4, 0.9);
 studyComposer.addPass(studyBloom);
 studyComposer.addPass(new OutputPass());
@@ -3269,6 +3286,9 @@ function placeHeroBook(e) {
 }
 
 function frame(dt, draw = true) {
+  // 画布 0×0（窗口被藏起来、显示器拔掉的那一下）：宽高比是 0/0，投影和裁剪平面全是 NaN，three r171+ 上传裁剪平面会直接抛错。
+  // 这时本来也没东西可看，只走时间不画
+  if (!renderer.domElement.width || !renderer.domElement.height) draw = false;
   wall += dt; modeT += dt;
   compMat.uniforms.uWall.value = wall;
   if (demo) {
@@ -3314,7 +3334,7 @@ function frame(dt, draw = true) {
     } else { heroBook.visible = false; heroLight.intensity = 0; heroBurstDone = false; }
     towerPages.update(time);
     renderer.toneMappingExposure = 1.25;
-    if (draw) composer.render();
+    if (draw) { splatKnight?.render(camera, composer); composer.render(); }
   }
   if (showStudy) {
     shared.uTime.value = wall;
@@ -3326,7 +3346,7 @@ function frame(dt, draw = true) {
     studyBloom.strength = 0.42 + pose.pow * 0.2 + (pose.surge || 0) * 0.35;
     renderer.toneMappingExposure = 0.95;
     shared.uViewH.value = innerHeight * studyPR;          // 粒子按书房的渲染分辨率算像素大小
-    if (draw) studyComposer.render();
+    if (draw) { study.splatKnight?.render(study.camera, studyComposer); studyComposer.render(); }
     shared.uViewH.value = towerViewH;
     renderer.toneMappingExposure = 1.25;
   }

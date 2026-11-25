@@ -1,0 +1,19 @@
+{
+  "name": "splat-knight",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Prototype: the magic-tower knight as pixel-art Gaussian splats",
+  "type": "module",
+  "scripts": {
+    "export": "blender -b --factory-startup --python export_splats.py",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@sparkjsdev/spark": "2.4.0",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "vite": "8.3.8"
+  }
+}

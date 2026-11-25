@@ -25,9 +25,9 @@ const opts = {
   entryPoints: [join(ROOT, 'src', 'main.js')],
   bundle: true,
   format: 'esm',
-  minify: true,
+  minify: process.env.MINIFY !== '0',   // MINIFY=0 for readable stack traces while debugging
   target: 'chrome130',
-  loader: { '.png': 'dataurl', '.glb': 'binary' },
+  loader: { '.png': 'dataurl', '.glb': 'binary', '.bin': 'binary', '.gz': 'binary' },
   write: false,
   logLevel: 'info',
   plugins: [{ name: 'inline-html', setup: (b) => b.onEnd((r) => { if (!r.errors.length) write(r.outputFiles[0].text) }) }],

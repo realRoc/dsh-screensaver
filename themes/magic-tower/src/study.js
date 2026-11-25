@@ -641,6 +641,15 @@ export function buildStudy(H) {
   knight.material.uniforms.uClampY.value = TOP + 0.015;   // 桌面 + 写字垫和金线的厚度
   scene.add(knight);
   const KNIGHT_FACING = new V3(1, 0, 0);
+  // #splat：坐着读书的也换成高斯泼溅骑士（splatKnight.js）。真三维、真深度：腿在桌下、手在书上不用再靠逐像素深度和桌面钳位去凑
+  const splatKnight = H.SPLAT_KNIGHT ? H.createSplatKnight(H.renderer, scene, { fogColor: scene.fog.color, fogD: H.shared.uFogD, depthPull: 0.03 }) : null;
+  if (splatKnight) {
+    knight.visible = false;
+    splatKnight.group.position.copy(KNIGHT_POS);
+    splatKnight.group.rotation.y = Math.atan2(KNIGHT_FACING.x, KNIGHT_FACING.z);
+  }
+  // 翻页之间偶尔抬头望一眼窗外的月亮（只有泼溅骑士能做：精灵表里没有这个动作，这里是运行时直接转头部骨骼）
+  const glance = { next: 9, t0: -100, yaw: 0, pitch: 0 };
 
   /* ---------------- 主角书：摊在骑士手下，会翻页 ---------------- */
   const pageTex = pixelTex(makePageCanvas()); pageTex.wrapS = pageTex.wrapT = THREE.ClampToEdgeWrapping;
@@ -1153,17 +1162,21 @@ export function buildStudy(H) {
     if (turning >= 0) {
       knFrame = T0 + turning;
       const target = sitTurn.phi[turning];
-      if (target === null) handPhi = 0; else handPhi += (target - handPhi) * Math.min(1, dt * 25);
-      handPage.visible = target !== null || handPhi > 0.001;
-      if (handPage.visible) setPage(handPage.geometry, handPhi);
+      if (!splatKnight) {
+        if (target === null) handPhi = 0; else handPhi += (target - handPhi) * Math.min(1, dt * 25);
+        handPage.visible = target !== null || handPhi > 0.001;
+        if (handPage.visible) setPage(handPage.geometry, handPhi);
+      }
     } else knFrame = Math.floor(t * 3) % T0;
     orientKnight(knight, camera, KNIGHT_FACING, knFrame);
-    setKnightLights(knight, [
+    const knLights = [
       { pos: candleLight.position, color: [1.0, 0.7, 0.4], pow: 0.4, range: 4.5 },
       { pos: moonSpot.position, color: [0.75, 0.88, 1.0], pow: 0.45, range: 40 },
       { pos: bookLight.getWorldPosition(new V3()), color: [0.6, 0.85, 1.0], pow: 0.1 + pose.pow * 1.4, range: 2.5 },
       { pos: crystalLight.position, color: [0.4, 0.7, 1.0], pow: 0.25 + surge * 0.6, range: 2.5 },
-    ]);
+    ];
+    setKnightLights(knight, knLights);
+    if (splatKnight) updateSplatKnight(t, knLights, pose);
 
     if (pose.rapid && t - lastRapid > 0.07) { lastRapid = t; flipPage(t, 0.36); }
     flips.forEach((f) => {
@@ -1201,11 +1214,41 @@ export function buildStudy(H) {
     glowLights.forEach((l, i) => { if (l.userData.base === undefined) l.userData.base = l.intensity; l.intensity = l.userData.base * (0.9 + 0.1 * Math.sin(t * (5 + i) + i)) * (1 + surge * 1.5); });
   }
 
+  function updateSplatKnight(t, lights, pose) {
+    const T0 = sitTurn.firstFrame, TN = sitTurn.phi.length, step = sitTurn.frameSec ?? 0.11;
+    const read = (t * 3) % T0, r0 = Math.floor(read);
+    if (turning >= 0) {
+      // 翻页：在第 turning 帧和下一帧之间按 knClock 连续插值；最后一帧接回读书的那一帧
+      const k = Math.min(1, knClock / step), a = T0 + turning, last = turning + 1 >= TN;
+      splatKnight.setPose('sit', a, last ? r0 : a + 1, k);
+      // 手里那页和手用同一个插值系数，页角始终捏在指间（精灵版是追着目标角度缓动，会落后半拍）
+      const p0 = sitTurn.phi[turning], p1 = last ? null : sitTurn.phi[turning + 1];
+      const phi = p0 === null ? (p1 === null ? 0 : p1 * k) : p1 === null ? p0 : p0 + (p1 - p0) * k;
+      handPhi = phi;
+      handPage.visible = p0 !== null || (p1 !== null && k > 0);
+      if (handPage.visible) setPage(handPage.geometry, handPhi);
+    } else {
+      splatKnight.setPose('sit', r0, (r0 + 1) % T0, read - r0);
+    }
+    // 抬头望月：缓入 1 秒、停 2 秒、缓出 1 秒；翻页和扎进书里的时候不看
+    if (turning < 0 && t > glance.next && pose.k < 0.05) {
+      glance.t0 = t; glance.next = t + 14 + Math.random() * 8;
+      const local = splatKnight.group.worldToLocal(moonSpot.position.clone()).sub(new V3(0, 1.3, 0));
+      glance.yaw = Math.max(-0.7, Math.min(0.7, Math.atan2(local.x, local.z)));
+      glance.pitch = -Math.max(0.25, Math.min(0.7, Math.atan2(local.y, Math.hypot(local.x, local.z)) + 0.35));
+    }
+    const g = t - glance.t0, e = g < 0 || g > 4 ? 0 : g < 1 ? g : g < 3 ? 1 : 4 - g, s = e * e * (3 - 2 * e);
+    splatKnight.headLook(glance.yaw * s, glance.pitch * s);
+    splatKnight.setLights(lights);
+    splatKnight.update(camera, 2.2);
+  }
+
   // debugCam: [[x,y,z], [lookX,lookY,lookZ], fov]，只在调试时从控制台设
   const api = {
     scene, camera, update, debugCam: null,
     focusWorld: () => knight.position.clone().add(new V3(0.4, 0.9, 0)),
     turnPage: () => { nextTurn = -1; },          // 调试：马上翻一页
+    splatKnight,
     get turning() { return turning; },
     bookWorld,
   };

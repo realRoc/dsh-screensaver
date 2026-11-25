@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Splat Knight</title>
+  <style>
+    :root { color-scheme: dark; --accent: #8cd4ff; --bg: #0a0f1a; --fg: #d8e2f4; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+      font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; accent-color: var(--accent); }
+    canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
+    #panel { position: fixed; top: 12px; left: 12px; display: grid; gap: 6px; padding: 10px 12px;
+      background: rgb(10 15 26 / 0.82); border: 1px solid #2a3650; border-radius: 6px; max-width: min(300px, calc(100vw - 48px)); }
+    #panel label { display: grid; grid-template-columns: 7.5em 1fr 3em; align-items: center; gap: 8px; }
+    #panel label.check { grid-template-columns: auto 1fr; }
+    #panel input[type="range"] { width: 100%; margin: 0; }
+    #panel output { text-align: end; font-variant-numeric: tabular-nums; }
+    #panel h1 { font-size: 13px; margin: 0 0 2px; font-weight: 600; }
+    #panel p { margin: 0; opacity: 0.7; }
+    #panel input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #panel[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <form id="panel" onsubmit="return false">
+    <h1>Splat knight · prototype</h1>
+    <p id="stats">loading…</p>
+    <label>pixel size <input type="range" id="px" min="2" max="8" step="1" value="4"><output for="px"></output></label>
+    <label>camera elev <input type="range" id="elev" min="-20" max="60" step="1" value="-6"><output for="elev"></output></label>
+    <label>orbit speed <input type="range" id="spin" min="0" max="1" step="0.05" value="0.25"><output for="spin"></output></label>
+    <label>walk speed <input type="range" id="walk" min="0" max="2" step="0.1" value="1"><output for="walk"></output></label>
+    <label class="check"><input type="checkbox" id="pixel" checked> pixel pass (off = raw splats)</label>
+    <label class="check"><input type="checkbox" id="outline" checked> outline</label>
+    <label class="check"><input type="checkbox" id="cull" checked> back-face cull</label>
+    <label class="check"><input type="checkbox" id="layer" checked> lift trim over cloth</label>
+    <p>drag to orbit · H hides this panel</p>
+  </form>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
