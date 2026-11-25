@@ -41,7 +41,7 @@ const CARPET_IN = 5.9, CARPET_OUT = 7.7;
 const R_WALK = (CARPET_IN + CARPET_OUT) / 2;
 const TOP_OFF = 34;                             // 塔顶开口在镜头上方多高
 
-const SPEED = 1.3;
+const SPEED = 1.2;            // 一步一拍：《星井》♩=72 → 每秒 1.2 步，三步一小节（圣经 §3「节奏统一」）
 const FOG_D = 0.02;
 const FOG_COLOR = 0x183048;
 
@@ -777,6 +777,9 @@ const float RISE = ${RISE.toFixed(6)};
 float fogF(float depth){ float f = uFogD*depth; return exp(-f*f); }
 #define pxSize(ws, d) ((ws) * projectionMatrix[1][1] * uViewH * 0.5 / max((d), 0.05))
 float hash11(float p){ p = fract(p*0.1031); p *= p+33.33; p *= p+p; return fract(p); }
+// 主角身边的安静区（圣经 §1.1「特效不盖他」）：环境粒子进到骑士身体这个椭球里就淡掉
+uniform vec3 uKnightC;
+float knightQuiet(vec3 p){ return smoothstep(0.35, 0.85, length((p - uKnightC) * vec3(1.0, 0.6, 1.0))); }
 `;
 const SOFT_POINT_FRAG = /* glsl */`
 varying vec3 vColor;
@@ -791,7 +794,7 @@ void main(){
   gl_FragColor = vec4(vColor, a);
 }
 `;
-const shared = { uTime: { value: 0 }, uViewH: { value: innerHeight }, uFogD: { value: FOG_D }, uClipY: { value: 1e5 } };
+const shared = { uKnightC: { value: new THREE.Vector3(0, -1e4, 0) }, uTime: { value: 0 }, uViewH: { value: innerHeight }, uFogD: { value: FOG_D }, uClipY: { value: 1e5 } };
 function pointsMaterial(vertexShader, fragmentShader = SOFT_POINT_FRAG, extra = {}) {
   return new THREE.ShaderMaterial({
     uniforms: { ...shared, ...extra },
@@ -799,8 +802,9 @@ function pointsMaterial(vertexShader, fragmentShader = SOFT_POINT_FRAG, extra = 
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   });
 }
-function flameMaterial(size, gain = 1) {
-  return pointsMaterial(COMMON_GLSL + /* glsl */`
+/** wake：传 { value } 就按每根蜡烛的 aLit 属性决定点没点着，熄着的在 wake 升到 1 时一起亮起来（书房「睡着 / 醒来」） */
+function flameMaterial(size, gain = 1, wake = null, stage = null) {
+  return pointsMaterial(COMMON_GLSL + (wake ? 'attribute float aLit; uniform float uAwake;\n' : '') + /* glsl */`
     attribute float aRand;
     varying float vFlick;
     varying float vFog;
@@ -811,8 +815,9 @@ function flameMaterial(size, gain = 1) {
       float t = uTime*(7.0+aRand*3.0) + aRand*50.0;
       vFlick = 0.85 + 0.1*sin(t) + 0.05*sin(t*2.7+1.3);
       vFog = w.y > uClipY ? 0.0 : fogF(-mv.z);
-      gl_PointSize = w.y > uClipY ? 0.0 : pxSize(${size.toFixed(3)}, -mv.z);
+      gl_PointSize = w.y > uClipY ? 0.0 : pxSize(${size.toFixed(3)}, -mv.z)${wake ? ' * max(aLit, smoothstep(0.0, 1.0, uAwake * 1.4 - aRand * 0.4))' : ''};
     }`, /* glsl */`
+    ${stage ? 'uniform float uStage;' : ''}
     varying float vFlick;
     varying float vFog;
     void main(){
@@ -823,11 +828,11 @@ function flameMaterial(size, gain = 1) {
       q.y -= max(q.y,0.0)*0.6;
       float core = 1.0 - smoothstep(0.0, 0.3, max(length(q) + c.y*0.25, 0.0));
       vec3 col = vec3(1.0,0.6,0.22)*halo + mix(vec3(1.0,0.62,0.22), vec3(1.0,0.97,0.82), core)*core*3.4;
-      col *= vFlick * vFog * ${gain.toFixed(3)};
+      col *= vFlick * vFog * ${gain.toFixed(3)}${stage ? ' * mix(0.3, 1.0, uStage)' : ''};
       float a = max(halo, core) * vFog;
       if (a < 0.01) discard;
       gl_FragColor = vec4(col, 1.0);
-    }`);
+    }`, { ...(wake ? { uAwake: wake } : {}), ...(stage ? { uStage: stage } : {}) });
 }
 
 /* ============================================================
@@ -1135,6 +1140,8 @@ const radial = (th) => new THREE.Vector3(Math.cos(th), 0, Math.sin(th));
 const candleK = (c) => c * 4 + 2;
 function candleBase(c) { const k = candleK(c); return polar(8.15, (k + 0.5) * DTH, (k + 1) * RISE); }
 const lampK = (j) => j * 8 + 4;
+let lampOrbs = null;
+const _lampCol = new THREE.Color();   // 栏杆灯柱的灯球：平时暗（不进辉光核心），骑士走近时亮起来（圣经 §3：他走过的路被点亮）
 function lampPos(j) { const s = lampK(j) + 0.5; return polar(R_RAIL, s * DTH, railY(s) + 0.42); }
 {
   const list = [];
@@ -1162,6 +1169,7 @@ function lampPos(j) { const s = lampK(j) + 0.5; return polar(R_RAIL, s * DTH, ra
   const posts = new THREE.InstancedMesh(newelGeo, marbleMat, lamps.length), caps = new THREE.InstancedMesh(capGeo, marbleMat, lamps.length);
   const bars = new THREE.InstancedMesh(barGeo, brassMat, lamps.length * 4), domes = new THREE.InstancedMesh(domeGeo, brassMat, lamps.length);
   const orbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.1, 14, 10), clipped(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 2.6, 3.6) })), lamps.length);
+  lampOrbs = { mesh: orbs, steps: lamps.map((j) => lampK(j) + 0.5) };
   const oo = new THREE.Object3D();
   lamps.forEach((j, i) => {
     const p = lampPos(j), sIdx = lampK(j) + 0.5, base = (lampK(j) + 1) * RISE, top = p.y - 0.2;
@@ -1336,14 +1344,18 @@ const glintMat = clipped(makeGlintMaterial());
       gl_Position = projectionMatrix*mv;
       float tw = pow(0.5 + 0.5*sin(uTime*(3.0 + aRand*6.0) + aRand*70.0), 3.0);
       vColor = haloPt ? vec3(0.15,0.3,0.7) : mix(vec3(0.45,0.8,1.0), vec3(0.9,0.97,1.0), tw) * (0.9 + tw*1.0);
-      vAlpha = (haloPt ? 0.12 : sin(life*3.14159)*(0.35 + tw*0.6)) * fogF(-mv.z) * step(w.y, uClipY);
+      vAlpha = (haloPt ? 0.12 : sin(life*3.14159)*(0.35 + tw*0.6)) * fogF(-mv.z) * step(w.y, uClipY) * knightQuiet(w.xyz);
       gl_PointSize = w.y > uClipY ? 0.0 : max(1.5, pxSize(haloPt ? 1.1 : 0.04 + 0.04*tw, -mv.z));
     }`));
   sparks.frustumCulled = false;
   tower.add(sparks); fxObjects.push(sparks);
 }
 
+// stageU 每帧由事件的余韵（共鸣、光环闪、浑天仪脉冲、正在进行的大事件）算出来，0 = 平时，1 = 事件正盛
+const stageU = { value: 0 };
+
 /* ---------------- 两串吊灯垂入深井（随塔周期排布） ---------------- */
+let chandelierCrystalMat = null;
 {
   const chR = 4.05, ringR = 0.6, CANDLES = 8;
   const spots = [];
@@ -1373,6 +1385,7 @@ const glintMat = clipped(makeGlintMaterial());
   const spikeGeo = new THREE.ConeGeometry(0.06, 0.42, 6); spikeGeo.rotateX(Math.PI); spikeGeo.translate(0, -0.76, 0);
   const tiers = new THREE.InstancedMesh(tierGeo, brassMat, spots.length), spikes = new THREE.InstancedMesh(spikeGeo, brassMat, spots.length);
   const crystalMat = clipped(new THREE.MeshStandardMaterial({ color: 0xd8ecff, emissive: 0x4a7ab0, emissiveIntensity: 0.9, metalness: 0.2, roughness: 0.12, flatShading: true }));
+  chandelierCrystalMat = crystalMat;
   const CR = 16, crystals = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.045), crystalMat, spots.length * CR);
   const qq = new THREE.Quaternion(), ss = new THREE.Vector3(1, 1.9, 1);
   spots.forEach((p, i) => {
@@ -1388,7 +1401,7 @@ const glintMat = clipped(makeGlintMaterial());
   const fg = new THREE.BufferGeometry();
   fg.setAttribute('position', new THREE.BufferAttribute(fp, 3));
   fg.setAttribute('aRand', new THREE.BufferAttribute(fr, 1));
-  tower.add(new THREE.Points(fg, flameMaterial(0.55)));
+  tower.add(new THREE.Points(fg, flameMaterial(0.55, 1, null, stageU)));     // 吊灯的火苗平时暗，事件时亮
 }
 
 /* ---------------- 塔冠：开口边缘一圈尖塔（跟着镜头走，盖住裁剪切口） ---------------- */
@@ -1476,6 +1489,9 @@ const softWhite = new THREE.CanvasTexture(makeSoftCanvas('rgba(255,255,255,1)', 
 const armGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: softWhite, color: new THREE.Color(0.5, 1.2, 2.4), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
 armGlow.scale.setScalar(7);
 armillary.add(armGlow);
+// 浑天仪里自发光的东西（核心、行星、符文带）：平时按 stageU 压暗
+const armBasics = [];
+armillary.traverse((o) => { if (o.material?.isMeshBasicMaterial) armBasics.push({ c: o.material.color, base: o.material.color.clone() }); });
 
 /* 符文光环：各不相同的宽度/颜色/纹样，一个竖着转 */
 const RINGS = [
@@ -1514,8 +1530,9 @@ covers.frustumCulled = sheets.frustumCulled = spines.frustumCulled = false;
 const leaders = Array.from({ length: FLOCKS + GIANTS }, (_, i) => {
   const r = mulberry32(100 + i), giant = i >= FLOCKS;
   return {
-    th: r() * Math.PI * 2, w: (giant ? 0.08 + r() * 0.06 : 0.22 + r() * 0.2) * (r() < 0.5 ? -1 : 1),
-    r0: giant ? 1.4 + r() * 1.4 : 1.6 + r() * 2.2, y0: r() * 34, vy: giant ? 0.1 + r() * 0.1 : -0.3 + r() * 0.8, ph: r() * 100,
+    // 全部顺着螺旋（+θ）往上飞（圣经 §3「方向统一」）；随机数照旧取，只是不再用来决定方向，书群的位置不变
+    th: r() * Math.PI * 2, w: (giant ? 0.08 + r() * 0.06 : 0.22 + r() * 0.2) * (r() < 2 ? 1 : 1),
+    r0: giant ? 1.4 + r() * 1.4 : 1.6 + r() * 2.2, y0: r() * 34, vy: giant ? 0.1 + r() * 0.1 : 0.15 + r() * 0.35, ph: r() * 100,
   };
 });
 const flyers = Array.from({ length: BOOKS_N }, (_, i) => {
@@ -1525,7 +1542,8 @@ const flyers = Array.from({ length: BOOKS_N }, (_, i) => {
   return {
     lead: giant ? FLOCKS + (i - FLOCKS * PER_FLOCK) : Math.floor(i / PER_FLOCK),
     off: giant ? new THREE.Vector3() : new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(2.2),
-    ph: r() * 100, flap: giant ? 2.2 + r() : 7 + r() * 5, s: giant ? 2.6 + r() * 0.8 : 0.7 + r() * 0.5,
+    // 扇翅对拍：小书一拍扇一下（2π × 1.2），巨书两拍一下
+    ph: r() * 100, flap: (giant ? 0.5 : 1) * 2 * Math.PI * SPEED * (0.97 + r() * 0.06), s: giant ? 2.6 + r() * 0.8 : 0.7 + r() * 0.5,
   };
 });
 covers.instanceColor.needsUpdate = true; spines.instanceColor.needsUpdate = true;
@@ -1543,7 +1561,7 @@ const SHARD_N = 44;
 const shardMat = makeGlintMaterial(); shardMat.emissiveIntensity = 0.5;
 const shards = new THREE.InstancedMesh(new THREE.OctahedronGeometry(1, 0), shardMat, SHARD_N);
 shards.frustumCulled = false;
-const shardSeeds = Array.from({ length: SHARD_N }, (_, i) => { const r = mulberry32(900 + i); return { th: r() * Math.PI * 2, r: 0.8 + r() * 3.5, y0: r() * 30, vy: 0.15 + r() * 0.4, w: (r() - 0.5) * 0.3, s: 0.04 + r() * 0.08, ph: r() * 10 }; });
+const shardSeeds = Array.from({ length: SHARD_N }, (_, i) => { const r = mulberry32(900 + i); return { th: r() * Math.PI * 2, r: 0.8 + r() * 3.5, y0: r() * 30, vy: 0.15 + r() * 0.4, w: 0.04 + r() * 0.12, s: 0.04 + r() * 0.08, ph: r() * 10 }; });   // 顺螺旋缓缓上升
 const shardGlowPos = new Float32Array(SHARD_N * 3), shardGlowRnd = new Float32Array(SHARD_N).map(() => Math.random());
 const shardGlowGeo = new THREE.BufferGeometry();
 shardGlowGeo.setAttribute('position', new THREE.BufferAttribute(shardGlowPos, 3));
@@ -1626,8 +1644,9 @@ const fairies = Array.from({ length: FAIRY_N }, (_, i) => {
   glow.scale.setScalar(wisp ? 0.6 : 0.45);
   scene.add(glow, sp); fxObjects.push(glow, sp);
   return {
-    sp, glow, wisp, th: r() * Math.PI * 2, w: (wisp ? 0.12 + r() * 0.1 : 0.3 + r() * 0.5) * (r() < 0.5 ? -1 : 1),
-    y0: r() * 30, vy: (r() - 0.4) * (wisp ? 0.3 : 0.7), ph: r() * 100, ph2: r() * 100, spd: wisp ? 0.6 : 0.9 + r() * 0.8,
+    // 精灵：都顺着螺旋往上，像在前面领路
+    sp, glow, wisp, th: r() * Math.PI * 2, w: (wisp ? 0.12 + r() * 0.1 : 0.3 + r() * 0.5) * (r() < 2 ? 1 : 1),
+    y0: r() * 30, vy: (wisp ? 0.1 : 0.25) + r() * (wisp ? 0.2 : 0.45), ph: r() * 100, ph2: r() * 100, spd: wisp ? 0.6 : 0.9 + r() * 0.8,
   };
 });
 function fairyPos(f, t, camY, out) {
@@ -1687,7 +1706,7 @@ function makeSerpent(o) {
   scene.add(pts); fxObjects.push(pts);
 }
 makeSerpent({ spin: 0.55, ph: 0.0, r0: 2.6, vy: 1.6, len: 5.5, thick: 0.38, c0: '(0.85,0.97,1.0)', c1: '(0.3,0.5,1.0)' });
-makeSerpent({ spin: -0.42, ph: 1.7, r0: 3.0, vy: 1.1, len: 4.5, thick: 0.3, c0: '(1.0,0.9,0.55)', c1: '(1.0,0.25,0.12)' });
+makeSerpent({ spin: 0.42, ph: 1.7, r0: 3.0, vy: 1.1, len: 4.5, thick: 0.3, c0: '(1.0,0.9,0.55)', c1: '(1.0,0.25,0.12)' });
 
 /* 爆炸/汇聚粒子池：彗星撞击、骑士蓄力都用它 */
 const MAX_B = 40, P_PER = 160;
@@ -1755,11 +1774,12 @@ const comets = Array.from({ length: COMET_N }, () => {
 let nextComet = 1.0;
 function spawnComet(camY, from, pitch = null) {
   const c = comets.find((x) => x.state === 0); if (!c) return;
-  const a0 = Math.random() * Math.PI * 2, a1 = a0 + Math.PI + rand(-1, 1);
+  // 顺着螺旋（+θ）往上划一段弧，而不是横穿天井（圣经 §3「方向统一」）
+  const a0 = Math.random() * Math.PI * 2, a1 = a0 + rand(0.7, 1.6), rad = rand(2.8, 4.2), y0 = camY + rand(-3, 9);
   const hitWall = Math.random() < 0.5;
-  c.p0.copy(polar(4.3, a0, camY + rand(0, 14)));
-  c.p2.copy(polar(hitWall ? 8.5 : 4.3, a1, camY + rand(2, 22)));
-  c.p1.copy(c.p0).add(c.p2).multiplyScalar(0.5); c.p1.x *= 0.2; c.p1.z *= 0.2; c.p1.y += rand(2, 7);
+  c.p0.copy(polar(rad, a0, y0));
+  c.p2.copy(polar(hitWall ? 8.3 : rad, a1, y0 + rand(4, 10)));
+  c.p1.copy(polar(rad * 1.15, (a0 + a1) / 2, (c.p0.y + c.p2.y) / 2 + rand(0.5, 2)));
   if (from) { c.p0.copy(from); c.p2.copy(polar(8.5, a1, camY + rand(-1, 15))); c.p1.copy(c.p0).add(c.p2).multiplyScalar(0.5); c.p1.y += rand(1, 4); }
   c.dur = c.p0.distanceTo(c.p2) / rand(7, 12);
   c.col = COMET_COLORS[Math.floor(Math.random() * COMET_COLORS.length)];
@@ -1809,7 +1829,7 @@ const bez = (c, k, out) => {
       float tw = 0.5 + 0.5*sin(uTime*(0.7 + aRand*3.0) + aRand*60.0);
       vColor = ember ? mix(vec3(1.0,0.25,0.1), vec3(1.0,0.6,0.3), tw) * 2.2 : vec3(0.7,0.88,1.0);
       vAlpha = (ember ? 0.4 + 0.6*tw : tw*0.55) * fogF(depth) * smoothstep(2.0, 4.5, depth)
-             * smoothstep(0.0, 0.08, rel) * (1.0 - smoothstep(0.92, 1.0, rel));
+             * smoothstep(0.0, 0.08, rel) * (1.0 - smoothstep(0.92, 1.0, rel)) * knightQuiet(wp);
       gl_PointSize = max(1.5, pxSize(ember ? 0.06 : 0.03, depth));
     }`, SOFT_POINT_FRAG, { uCamY: camYU }));
   dust.frustumCulled = false;
@@ -1873,6 +1893,8 @@ function makeKnightMesh(anim) {
       uRight: { value: v3() }, uUpV: { value: v3() }, uFwdV: { value: v3() },
       uGlow: { value: 2.2 }, uFogColor: { value: new THREE.Color(FOG_COLOR) }, uFogD: shared.uFogD,
       uDepthPull: { value: 0 },   // 只改深度不改大小：精灵是一张纸，人身体的厚度靠这个补
+      // 轮廓光（《Pixel Magic》圣经 §1.1）：主角身上一道别人没有的冷色亮边，光从他身后来（书房的长窗、塔顶的开口）
+      uRimPos: { value: v3() }, uRimCol: { value: new THREE.Color(0.75, 0.9, 1.0) }, uRimPow: { value: 0 },
     },
     defines: depthTex ? { USE_SPRITE_DEPTH: '' } : {},
     vertexShader: /* glsl */`
@@ -1893,6 +1915,7 @@ function makeKnightMesh(anim) {
       uniform float uSheetPx, uAmbient, uSteps, uRamps, uGlow, uFogD;
       uniform vec3 uBands, uRight, uUpV, uFwdV, uFogColor;
       uniform vec3 uLightPos[4]; uniform vec3 uLightCol[4]; uniform float uLightPow[4]; uniform float uLightRange[4];
+      uniform vec3 uRimPos, uRimCol; uniform float uRimPow;
       varying vec2 vSheetUv; varying vec3 vWorld; varying float vDepth; varying vec3 vOrigin; varying vec2 vCellUv;
       vec4 lut(float r, float st){ return texture2D(tLUT, vec2((st + 0.5) / uSteps, (r + 0.5) / uRamps)); }
       #ifdef USE_SPRITE_DEPTH
@@ -1937,11 +1960,20 @@ function makeKnightMesh(anim) {
         if (mod(flags, 4.0) >= 2.0) st -= 1.0;
         if (mod(flags, 2.0) >= 1.0) st = off >= 1.0 ? 1.0 : 0.0;
         if (ramp < 0.5) st = min(st, 1.0);
+        // 轮廓光：侧对镜头（法线 z 小）又朝着身后那盏光的像素，往亮里挪一到两档、染一点冷色。
+        // 外描边那一圈像素不动：像素画里的轮廓光是描边里面紧贴着的一条亮线
+        vec3 Rw = normalize(uRimPos - vWorld);
+        vec3 RL = vec3(dot(Rw, uRight), dot(Rw, uUpV), dot(Rw, uFwdV));
+        float edge = 1.0 - clamp(n.z, 0.0, 1.0);
+        float rim = edge * edge * max(dot(n, RL), 0.0) * uRimPow;
+        bool rimLit = lit && mod(flags, 2.0) < 1.0 && rim > 0.3;
+        if (rimLit) st = max(st, base) + (rim > 0.65 ? 2.0 : 1.0);
         if (!lit) st = base;
         st = clamp(st, 0.0, uSteps - 1.0);
         vec3 col = lut(ramp, st).rgb;
         if (!lit) col *= uGlow;
         else { float tl = length(tint); if (tl > 1e-3) col = mix(col, col * (tint / tl) * 1.3, clamp(tl, 0.0, 1.0) * 0.22); }
+        if (rimLit) col = mix(col, col * uRimCol * 1.35, 0.45);
         float f = uFogD * vDepth; col = mix(uFogColor, col, exp(-f*f));
         gl_FragColor = vec4(col, 1.0);
       }`,
@@ -1971,6 +2003,41 @@ function orientKnight(mesh, cam, facing, frame) {
   u.uFwdV.value.copy(F).multiplyScalar(Math.cos(e)).addScaledVector(U, Math.sin(e));
   u.uCell.value.set(frame, dir);
 }
+// 天井中心那几样（浑天仪、吊灯、符文环）平时是暗的剪影，参与事件时才亮起来（圣经 §3「中心留给事件」）。
+/** 轮廓光：pos 是光源的世界位置（在主角身后），pow 0 = 关 */
+function setKnightRim(mesh, pos, pow, color = null) {
+  const u = mesh.material.uniforms;
+  u.uRimPos.value.copy(pos); u.uRimPow.value = pow;
+  if (color) u.uRimCol.value.setRGB(...color);
+}
+/**
+ * 主角身后的「安静区」（圣经 §1.1）：一张对着镜头的柔边暗片，摆在主角身后 back 米处。
+ * 只压暗他身后的背景（更远的书墙、书堆），不压他自己、也不压他身前的东西（深度测试挡着）
+ */
+function makeQuietZone(w, h, strength) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.ShaderMaterial({
+    uniforms: { uStrength: { value: strength } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: /* glsl */`
+      uniform float uStrength; varying vec2 vUv;
+      void main(){
+        vec2 q = (vUv - 0.5) * 2.0;
+        float a = (1.0 - smoothstep(0.15, 1.0, length(q))) * uStrength;
+        gl_FragColor = vec4(0.0, 0.0, 0.0, a);
+      }`,
+    transparent: true, depthWrite: false, fog: false,
+  }));
+  m.renderOrder = 9;          // 在主角（10）之前画
+  m.frustumCulled = false;
+  return m;
+}
+const _qz = new THREE.Vector3();
+/** 每帧：把安静区放到 center（主角身体中心）身后 back 米、正对镜头 */
+function placeQuietZone(zone, center, cam, back) {
+  _qz.subVectors(center, cam.position).normalize();
+  zone.position.copy(center).addScaledVector(_qz, back);
+  zone.quaternion.copy(cam.quaternion);
+}
 function setKnightLights(mesh, lights) {
   const u = mesh.material.uniforms;
   for (let i = 0; i < 4; i++) {
@@ -1982,6 +2049,9 @@ function setKnightLights(mesh, lights) {
 }
 const knight = makeKnightMesh('walk');
 scene.add(knight);
+const knightQuiet = makeQuietZone(2.8, 3.6, 0.7);
+scene.add(knightQuiet);
+const KN_CENTER = new THREE.Vector3(0, 0.95, 0);   // 脚底 → 身体中心
 const KN_FEET = KN_META.anims.walk.feetV;
 const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.6),
   new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(makeSoftCanvas('rgba(0,0,0,0.55)', 'rgba(0,0,0,0)')), transparent: true, depthWrite: false }));
@@ -2012,6 +2082,7 @@ const bladeA = { value: new THREE.Vector3() }, bladeB = { value: new THREE.Vecto
       gl_PointSize = max(1.5, pxSize(0.03 + 0.02*uAura*(1.0 - life), -mv.z));
     }`, SOFT_POINT_FRAG, { uBA: bladeA, uBB: bladeB, uAura: auraU }));
   aura.frustumCulled = false;
+  aura.userData.knightOwn = true;          // 骑士自己的光：风格检查算「特效盖住主角」时不把它当特效
   scene.add(aura); fxObjects.push(aura);
 }
 
@@ -2535,7 +2606,7 @@ const hd2d = new ShaderPass({
       col = mix(vec3(lum), col, 1.12);
       vec2 q = vUv - 0.5; q.x *= uRes.x/uRes.y;
       col *= mix(0.72, 1.0, 1.0 - smoothstep(0.35, 1.05, length(q)));
-      col += (hash(vUv*uRes + fract(uTime)*100.0) - 0.5) * 0.012;
+      // （原来这里加 ±0.006 的颗粒噪点：像素画里读起来是脏，去掉。圣经 §1.3）
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
     }`,
 });
@@ -2575,6 +2646,8 @@ function swordLook(t) {
   return 1 - ss(e, SWORD.turn + SWORD.strike, SWORD.turn + SWORD.strike + SWORD.back);
 }
 let progress = SPT;
+// 内部节拍器（圣经 §3「节奏统一」）：骑士一步就是一拍，三步一小节。没放音乐时，流星、环境事件都踩在这上面
+let lastBeat = -1, beatNow = false, downbeatNow = false, downbeatPulse = 0;
 let time = 0;
 // 接缝检测用（scripts/seam.mjs）：塔每爬一圈整体往上挪一圈，平时是 0；调试时拨成 ±1 看「换一圈塔」画面变不变
 let towerShift = 0;
@@ -2608,17 +2681,22 @@ function updateWell(t, camY) {
   armRings[1].rotation.set(1.1, t * 0.4, t * 0.15);
   armRings[2].rotation.set(t * -0.5, 0.7, t * 0.3);
   armLight.position.copy(armillary.position);
-  armGlow.material.opacity = 0.75 + 0.25 * Math.sin(t * 1.7);
+  const armLit = 0.25 + 0.75 * stageU.value;
+  armGlow.material.opacity = (0.75 + 0.25 * Math.sin(t * 1.7)) * armLit;
+  armLight.intensity = 70 * armLit;
+  armBasics.forEach((b) => b.c.copy(b.base).multiplyScalar(armLit));
+  if (chandelierCrystalMat) chandelierCrystalMat.emissiveIntensity = 0.25 + 0.65 * stageU.value;
   armGlow.scale.setScalar(4.2 * (1 + armPulse * 0.9));
 
   RINGS.forEach((R, i) => {
     const m = ringMeshes[i];
     const y = wrap(R.y + t * 0.12, camY - 8, ringSpan);
     m.position.set(0, y, 0);
-    m.rotation.set(R.tilt > 1 ? R.tilt : R.tilt * Math.sin(t * 0.2 + i), t * R.spin, R.tilt > 1 ? 0 : R.tilt * Math.cos(t * 0.17 + i));
+    // 绕竖轴转的方向统一成螺旋方向（three 的 rotation.y 为负 = θ 增大）
+    m.rotation.set(R.tilt > 1 ? R.tilt : R.tilt * Math.sin(t * 0.2 + i), -t * Math.abs(R.spin), R.tilt > 1 ? 0 : R.tilt * Math.cos(t * 0.17 + i));
     const rel = (y - (camY - 8)) / ringSpan;
     m.material.opacity = 0.85 * THREE.MathUtils.smoothstep(rel, 0, 0.12) * (1 - THREE.MathUtils.smoothstep(rel, 0.85, 1));
-    m.material.color.setRGB(...R.col).multiplyScalar(1 + ringFlare * 1.5);
+    m.material.color.setRGB(...R.col).multiplyScalar((0.3 + 0.7 * stageU.value + downbeatPulse * 0.35) * (1 + ringFlare * 1.5));
   });
 
   const FLIP = new THREE.Matrix4().makeRotationX(Math.PI);    // 左半边：先绕书脊翻面，再转到左侧 → 衬纸仍朝里
@@ -2665,15 +2743,16 @@ function updateWell(t, camY) {
   fairyTrails.flush();
 
   pageSeeds.forEach((p, i) => {
-    const y = wrap(p.y - t * 0.12, camY - 8, 28) + Math.sin(t * 0.4 + p.ph) * 0.5;
-    dummy.position.copy(polar(p.r + Math.sin(t * 0.3 + p.ph) * 0.4, p.th + t * 0.05 * p.dir, y));
+    const y = wrap(p.y + t * 0.12, camY - 8, 28) + Math.sin(t * 0.4 + p.ph) * 0.5;      // 书页往上飘、顺螺旋转
+    dummy.position.copy(polar(p.r + Math.sin(t * 0.3 + p.ph) * 0.4, p.th + t * 0.05, y));
     dummy.rotation.set(Math.sin(t * 1.6 + p.ph) * 0.9, t * 0.5 + p.ph, Math.cos(t * 1.2 + p.ph) * 0.6);
     dummy.updateMatrix(); pages.setMatrixAt(i, dummy.matrix);
   });
   pages.instanceMatrix.needsUpdate = true;
 
   // 彗星
-  if (t >= nextComet) { if (!scoreRun) spawnComet(camY); nextComet = t + rand(0.6, 1.8); }   // 放乐谱时流星只跟主旋律走
+  // 流星踩拍子：每一步（一拍）有一半机会放一颗（放乐谱时流星只跟主旋律走）
+  if (t >= nextComet && beatNow) { if (!scoreRun && Math.random() < 0.55) spawnComet(camY); nextComet = t + 0.3; }
   comets.forEach((c, i) => {
     if (c.state === 0) return;
     const k = (t - c.t0) / c.dur;
@@ -2786,7 +2865,7 @@ function updateEvents(t, camY) {
         queueFx(GALLERY[name].map(([dt, o]) => [dt, name, o]), t);
         gallery.next = t + (name === 'aurora' ? 7.5 : 3.4);
       }
-    } else if (!ev && t >= nextEvent) {
+    } else if (!ev && t >= nextEvent && downbeatNow) {     // 环境事件落在小节的强拍上
       const a = pickAmbient();
       if (PHRASES[a]) { queueFx(PHRASES[a], t); nextEvent = t + rand(6, 11); } else startEvent(a);
     }
@@ -2848,6 +2927,8 @@ function update(dt) {
   time += dt;
   easeMood(dt);
   progress += dt * SPEED * moodNow.rate;
+  { const beat = Math.floor(progress); beatNow = beat !== lastBeat; downbeatNow = beatNow && beat % 3 === 0; lastBeat = beat; }
+  downbeatPulse = Math.exp(-(progress % 3) * 3);
   const knS = progress, camS = knS - CAM.back;
   shared.uTime.value = time;
   hd2d.uniforms.uTime.value = time;
@@ -2857,6 +2938,16 @@ function update(dt) {
   const knTh = knS * DTH;
   prevKn.copy(knight.position);
   knight.position.copy(polar(R_WALK, knTh, stairTop(knS)));
+  shared.uKnightC.value.copy(knight.position).add(KN_CENTER);
+  // 栏杆灯：平时暗，骑士走近的那几盏亮起来、走过后慢慢暗回去
+  if (lampOrbs) {
+    const localK = knS - SPT * (Math.floor(camS / SPT) + towerShift);
+    lampOrbs.steps.forEach((sIdx, i) => {
+      const d = sIdx - localK;
+      lampOrbs.mesh.setColorAt(i, _lampCol.setScalar(0.3 + 0.75 * Math.exp(-(((d - 1.5) / (d > 1.5 ? 3 : 5)) ** 2))));
+    });
+    lampOrbs.mesh.instanceColor.needsUpdate = true;
+  }
   shadow.position.copy(polar(R_WALK, knTh, (Math.floor(knS) + 1) * RISE + 0.02));
 
   if (!freeCam) {
@@ -2927,7 +3018,7 @@ function update(dt) {
   const WF = KN_META.anims.walk.frames ?? KN_META.frames;     // 走路表自己的帧数（和精灵表宽度对得上）
   const cyc = ((knS / 2) % 1 + 1) % 1, f = Math.min(WF - 1, Math.floor(cyc * WF));
   if (f !== lastFrame) {
-    if (lastFrame !== -1 && (f === 2 || f === 6)) spawnBurst(knightPixel(f === 2 ? 35 : 45, 70, new THREE.Vector3()).add(new THREE.Vector3(0, 0.03, 0)), [0.45, 0.75, 1.0], 0.2, 0);
+    if (lastFrame !== -1 && (f === 2 || f === 6)) spawnBurst(knightPixel(f === 2 ? 35 : 45, 72, new THREE.Vector3()).add(new THREE.Vector3(0, 0.01, 0)), [0.22, 0.38, 0.55], 0.11, 0);   // 脚步辉光：落在台阶上的一点光，不糊住他的靴子（风格检查 cover% 抓到过）
     lastFrame = f;
   }
   orientKnight(knight, camera, tangent(knTh), f);
@@ -2939,6 +3030,9 @@ function update(dt) {
     { pos: tmp3.copy(camera.position).add(moonDirU.value.clone().multiplyScalar(200)), color: [0.75, 0.9, 1.0], pow: 0.45, range: 1e4 },
   ]);
   knight.material.uniforms.uGlow.value = 2.2 + resonance * 2.4 + 0.25 * Math.sin(time * 3);
+  // 主角托出来（圣经 §1.1）：轮廓光从塔顶开口来（月光方向，在他前上方），身后压一圈安静区
+  setKnightRim(knight, tmp3.copy(knight.position).addScaledVector(moonDirU.value, 60), 2.0);
+  placeQuietZone(knightQuiet, tmp3.copy(knight.position).add(KN_CENTER), camera, 0.9);
   bladeA.value.copy(knightPixel(25, 46, tmp2));
   bladeB.value.copy(knightPixel(12, 62, tmp2));
   auraU.value = 1 + resonance * 2;
@@ -2947,6 +3041,8 @@ function update(dt) {
 
   shake *= Math.pow(0.02, dt); bloomBoost *= Math.pow(0.05, dt); flash *= Math.pow(0.03, dt);
   resonance *= Math.pow(0.3, dt); ringFlare *= Math.pow(0.15, dt); armPulse *= Math.pow(0.25, dt);
+  { const target = Math.min(1, Math.max(resonance * 0.6, ringFlare, armPulse, ev ? 0.7 : 0));
+    stageU.value += (target - stageU.value) * Math.min(1, dt * (target > stageU.value ? 6 : 1.2)); }
   bloom.strength = BLOOM_BASE + bloomBoost;
   flashLight.intensity = flash * 160;
 
@@ -3009,7 +3105,7 @@ function makePageBurst(sceneRef, mat, N = 80) {
 const study = buildStudy({
   THREE, makeCanvas, pixelTex, spriteTex, shade, mulberry32, makeShelfTextures, makeSoftCanvas,
   pointsMaterial, flameMaterial, COMMON_GLSL, NOISE_GLSL, SOFT_POINT_FRAG, BOOK_COLORS,
-  makePageCanvas, makeCoverCanvas, makeEndpaperCanvas, makeKnightMesh, orientKnight, setKnightLights, shared,
+  makePageCanvas, makeCoverCanvas, makeEndpaperCanvas, makeKnightMesh, orientKnight, setKnightLights, setKnightRim, makeQuietZone, placeQuietZone, shared,
   makePageBurst, sitHands: KN_META.sitHands, sitTurn: KN_META.sitTurn, glintGeometry, makeGlintMaterial,
   // Blender 建的书桌一角：GLB 的字节打包进来，直接解析（沙盒里不能 fetch）
   deskModel: { data: deskGlb, GLTFLoader, mergeVertices, mergeGeometries },
@@ -3019,7 +3115,10 @@ studyComposer.addPass(new RenderPass(study.scene, study.camera));
 const studyBloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.42, 0.4, 0.9);
 studyComposer.addPass(studyBloom);
 studyComposer.addPass(new OutputPass());
+// 移轴模糊关掉（uOn = 0）：像素糊了就不是像素画了，远近改用雾和明度（圣经 §1.3）；调色和暗角保留
+hd2d.uniforms.uOn.value = 0;
 const studyHD = new ShaderPass(hd2d.material.clone());
+studyHD.uniforms.uOn.value = 0;
 studyComposer.addPass(studyHD);
 studyComposer.renderToScreen = false;
 
@@ -3048,13 +3147,14 @@ const compMat = new THREE.ShaderMaterial({
       vec2 q = (vUv - uCenter) * vec2(uAspect, 1.0);
       float d = length(q), ang = atan(q.y, q.x);
       float live = step(0.001, uMix) * step(uMix, 0.999);
-      float n = fbm(vec2(ang*2.5, d*5.0 - uWall*2.5))*0.34 + fbm(vUv*9.0 + uWall*0.5)*0.12;
+      // 《Pixel Magic》圣经 §4：传送门跟塔的螺旋一个方向转——进塔顺时针（画面上楼梯就是这么盘上去的），回书房反着松开
+      float n = fbm(vec2((ang + uDir*uWall*0.8)*2.5, d*5.0 - uWall*2.5))*0.34 + fbm(vUv*9.0 + uWall*0.5)*0.12;
       float R = uMix * 2.4;
       float e = d + n - R;
       float inside = 1.0 - smoothstep(-0.012, 0.012, e);
       float amt = sin(clamp(uMix, 0.0, 1.0) * 3.14159) * 0.16 * live;
       vec2 zoomUv = uCenter + (vUv - uCenter) * mix(0.35, 1.0, smoothstep(0.0, 1.0, uMix));
-      vec2 swirl = vec2(cos(ang + 1.57), sin(ang + 1.57)) * exp(-e*e*60.0) * 0.02 * live;
+      vec2 swirl = vec2(cos(ang + uDir*1.57), sin(ang + uDir*1.57)) * exp(-e*e*60.0) * 0.02 * live;
       vec2 ca = (vUv - uCenter) * amt * 0.25;                    // 色散
       vec3 study, tower;
       if (uDir > 0.0) {
@@ -3067,11 +3167,11 @@ const compMat = new THREE.ShaderMaterial({
       vec3 inner = uDir > 0.0 ? tower : study, outer = uDir > 0.0 ? study : tower;
       vec3 col = mix(outer, inner, inside);
       float ring = exp(-e*e*700.0) * live, ring2 = exp(-pow(e + 0.09, 2.0)*900.0) * live * 0.6, halo = exp(-e*e*40.0) * live * 0.4;
-      vec3 rc = mix(vec3(0.3,0.7,1.0), vec3(1.0,0.82,0.45), 0.5 + 0.5*sin(ang*7.0 + uWall*6.0));
-      vec3 rc2 = mix(vec3(0.75,0.5,1.0), vec3(0.4,0.95,1.0), 0.5 + 0.5*sin(ang*11.0 - uWall*8.0));
+      vec3 rc = mix(vec3(0.3,0.7,1.0), vec3(1.0,0.82,0.45), 0.5 + 0.5*sin(ang*7.0 + uDir*uWall*6.0));
+      vec3 rc2 = mix(vec3(0.75,0.5,1.0), vec3(0.4,0.95,1.0), 0.5 + 0.5*sin(ang*11.0 + uDir*uWall*3.5));
       col += rc * (ring*2.6 + halo) + rc2 * ring2 * 2.0;
       // 门边一圈闪烁的符文刻度
-      float ticks = step(0.86, fract(ang * 36.0 / 6.2831 + uWall*1.5)) * exp(-pow(e + 0.05, 2.0)*1600.0) * live;
+      float ticks = step(0.86, fract(ang * 36.0 / 6.2831 + uDir*uWall*1.5)) * exp(-pow(e + 0.05, 2.0)*1600.0) * live;
       col += vec3(1.0,0.9,0.6) * ticks * 2.0;
       col *= mix(1.0, 0.68, (1.0 - inside) * smoothstep(0.0, 0.6, uMix) * live);
       col += vec3(0.75,0.88,1.0) * uFlash;
@@ -3098,7 +3198,7 @@ const glyphCanvas = (() => {
   return c;
 })();
 const glyphTex = new THREE.CanvasTexture(glyphCanvas); glyphTex.magFilter = glyphTex.minFilter = THREE.NearestFilter; glyphTex.generateMipmaps = false;
-const ovU = { uOrigin: { value: new THREE.Vector2() }, uT: { value: 2 }, uAspect: { value: 1 }, uScale: { value: 1 }, tGlyph: { value: glyphTex } };
+const ovU = { uOrigin: { value: new THREE.Vector2() }, uT: { value: 2 }, uAspect: { value: 1 }, uScale: { value: 1 }, tGlyph: { value: glyphTex }, uSpin: { value: 1 } };
 const overlay = (() => {
   const N = 4200, seed = new Float32Array(N * 4);
   for (let i = 0; i < N * 4; i++) seed[i] = Math.random();
@@ -3109,13 +3209,13 @@ const overlay = (() => {
     uniforms: ovU,
     vertexShader: /* glsl */`
       attribute vec4 aSeed;
-      uniform vec2 uOrigin; uniform float uT, uAspect, uScale;
+      uniform vec2 uOrigin; uniform float uT, uAspect, uScale, uSpin;
       varying vec3 vColor; varying float vAlpha; varying float vType; varying float vGlyph; varying vec2 vDir;
       void main(){
         float delay = fract(aSeed.x*7.31) < 0.35 ? 0.2 : 0.0;           // 第二波晚一点再炸
         float tt = uT - delay;
         float t = clamp(tt / 0.95, 0.0, 1.0);
-        float spin = (aSeed.w > 0.5 ? 1.0 : -1.0) * (1.0 + aSeed.y*5.0);
+        float spin = -uSpin * (1.0 + aSeed.y*5.0);          // 全部朝一个方向旋出去：一个漩涡，而不是四散
         float ang = aSeed.x*6.2831 + t*spin;
         float sp = 0.2 + aSeed.y*2.2;
         float r = sp * (1.0 - pow(1.0 - t, 2.6)) * 1.6;
@@ -3164,7 +3264,7 @@ const circleOverlay = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.Sh
   uniforms: ovU,
   vertexShader: /* glsl */`varying vec2 vNdc; void main(){ vNdc = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
   fragmentShader: /* glsl */`
-    uniform vec2 uOrigin; uniform float uT, uAspect;
+    uniform vec2 uOrigin; uniform float uT, uAspect, uSpin;
     varying vec2 vNdc;
     void main(){
       float t = clamp(uT, 0.0, 1.0);
@@ -3172,9 +3272,9 @@ const circleOverlay = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.Sh
       float R = 0.1 + (1.0 - pow(1.0 - t, 3.0)) * 1.5;
       float d = length(q), ang = atan(q.y, q.x);
       float rings = exp(-pow((d - R)*70.0, 2.0)) + exp(-pow((d - R*0.84)*110.0, 2.0))*0.8 + exp(-pow((d - R*0.58)*140.0, 2.0))*0.6;
-      float seg = (ang + t*4.0) * 36.0 / 6.2831;
+      float seg = (ang + uSpin*t*4.0) * 36.0 / 6.2831;
       float ticks = step(0.8, fract(seg)) * step(R*0.84, d) * step(d, R);
-      float rseg = (ang - t*3.0) * 18.0 / 6.2831;
+      float rseg = (ang + uSpin*t*2.0) * 18.0 / 6.2831;
       float runes = step(0.45, fract(sin(floor(rseg)*91.7)*437.5)) * step(0.25, fract(rseg)) * step(fract(rseg), 0.75) * step(R*0.62, d) * step(d, R*0.8);
       float star = 0.0;
       for (int k = 0; k < 5; k++) {   // 内圈五角星
@@ -3184,7 +3284,7 @@ const circleOverlay = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.Sh
         star += exp(-pow(length(pa - ba*hh)*180.0, 2.0));
       }
       float a = (rings + ticks*0.8 + runes*0.45 + star*0.7) * smoothstep(0.0, 0.05, uT) * (1.0 - smoothstep(0.5, 1.0, t)) * step(uT, 1.0);
-      vec3 col = mix(vec3(1.0,0.82,0.45), vec3(0.4,0.85,1.0), 0.5 + 0.5*sin(ang*3.0 + t*6.0));
+      vec3 col = mix(vec3(1.0,0.82,0.45), vec3(0.4,0.85,1.0), 0.5 + 0.5*sin(ang*3.0 + uSpin*t*6.0));
       gl_FragColor = vec4(col * a * 1.6, 1.0);
     }`,
   transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -3243,8 +3343,10 @@ function swoopCamera(k) {
   camera.position.lerpVectors(swoopFrom, camera.position.clone(), e);
   camera.position.y += Math.sin(e * Math.PI) * 1.5;
   const roll = (1 - e) * (1 - e) * 2.4;                     // 俯冲时镜头翻滚着落下来
-  camera.up.set(Math.sin(roll), Math.cos(roll), 0);
+  camera.up.set(0, 1, 0);
   camera.lookAt(swoopLook.lerp(normLook, e));
+  // 绕镜头自己的视线滚：画面顺时针转着落定，和楼梯盘上去的方向一致（圣经 §4「落地」）
+  camera.rotateZ(-roll);
   camera.fov = CAM.fov + (1 - e) * 22; camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
@@ -3298,6 +3400,7 @@ function frame(dt, draw = true) {
     flash = Math.max(0, 1 - Math.abs(e - 1.45) / 0.14) * 0.25;
     if (e > T_LEAVE) { setMode('idle'); if (queued === 'enter') { queued = null; setMode('enter'); } }
   }
+  if (mode === 'enter' || mode === 'leave') ovU.uSpin.value = mode === 'enter' ? 1 : -1;
   if (mode === 'enter' && e > 1.28 && burstT0 < wall - e + 1.28) {
     const bp = study.bookWorld().project(study.camera); fireBurst(bp.x, bp.y);
   }
@@ -3314,7 +3417,7 @@ function frame(dt, draw = true) {
     } else { heroBook.visible = false; heroLight.intensity = 0; heroBurstDone = false; }
     towerPages.update(time);
     renderer.toneMappingExposure = 1.25;
-    if (draw) composer.render();
+    if (draw) { const restore = applyDebugView(); composer.render(); restore(); }
   }
   if (showStudy) {
     shared.uTime.value = wall;
@@ -3393,19 +3496,22 @@ function loop(t) {
 }
 function renderFrame() { frame(0); }
 
-// 书房按大约 520 行渲染再放大（不插值）：跟坐着的骑士精灵差不多一个像素一格，书桌和骑士的颗粒对得上
-const STUDY_LINES = 520;
-let studyPR = 1, towerViewH = 1;
+// 像素网格（《Pixel Magic》圣经 §1.2）：两幕都按「骑士精灵一个像素对一格」定渲染行数，再最近邻放大（不插值）。
+// 书房：坐姿精灵 152 px/m，骑士（1.55 m）占画面 45% 高 → 约 520 行；
+// 塔里：走路精灵 43 px/m，骑士（1.9 m）占画面 13.3% 高 → 约 615 行。数字不同，规则相同：主角和场景的颗粒对得上
+const STUDY_LINES = 520, TOWER_LINES = 615;
+let studyPR = 1, towerPR = 1, towerViewH = 1;
 function resize() {
   const w = innerWidth, h = innerHeight, pr = quality.pr;
   renderer.setPixelRatio(pr); renderer.setSize(w, h, false);
   studyPR = Math.min(pr, STUDY_LINES / h);
-  composer.setPixelRatio(pr); composer.setSize(w, h);
+  towerPR = Math.min(pr, TOWER_LINES / h);
+  composer.setPixelRatio(towerPR); composer.setSize(w, h);
   studyComposer.setPixelRatio(studyPR); studyComposer.setSize(w, h);
-  for (const rt of [studyComposer.renderTarget1, studyComposer.renderTarget2]) rt.texture.minFilter = rt.texture.magFilter = THREE.NearestFilter;
+  for (const rt of [composer.renderTarget1, composer.renderTarget2, studyComposer.renderTarget1, studyComposer.renderTarget2]) rt.texture.minFilter = rt.texture.magFilter = THREE.NearestFilter;
   for (const cam of [camera, study.camera]) { cam.aspect = w / h; cam.updateProjectionMatrix(); }
-  shared.uViewH.value = towerViewH = h * pr;
-  hd2d.uniforms.uRes.value.set(w * pr, h * pr); hd2d.uniforms.uBlur.value = 3.5 * pr;
+  shared.uViewH.value = towerViewH = h * towerPR;
+  hd2d.uniforms.uRes.value.set(w * towerPR, h * towerPR); hd2d.uniforms.uBlur.value = 3.5 * towerPR;
   studyHD.uniforms.uRes.value.set(w * studyPR, h * studyPR); studyHD.uniforms.uBlur.value = 3.5 * studyPR;
   compMat.uniforms.uAspect.value = w / h;
   ovU.uAspect.value = w / h; ovU.uScale.value = pr * Math.max(0.7, h / 900);
@@ -3414,7 +3520,43 @@ function resize() {
 addEventListener('resize', resize);
 
 /* ---------------- 对外接口（主题的 main.js 用） ---------------- */
+// 风格检查用（scripts/style.mjs）：这一帧画塔的时候临时藏掉一类东西，用来算「特效盖住了骑士多少」。
+//   fx: false   藏掉所有特效和光（叠加混合的、点云、精灵片），骑士自己的剑光除外
+//   knight: false  只藏骑士精灵（安静区、影子留着，这样两张图的差别只有他本人）
+let debugView = null;
+function applyDebugView() {
+  if (!debugView) return () => {};
+  const hidden = [];
+  if (debugView.fx === false) scene.traverse((o) => {
+    if (!o.visible || o.userData.knightOwn || o === knight) return;
+    const m = o.material, additive = m && !Array.isArray(m) && m.blending === THREE.AdditiveBlending;
+    if (o.isPoints || o.isSprite || additive) { o.visible = false; hidden.push(o); }
+  });
+  if (debugView.knight === false) scene.traverse((o) => { if (o.visible && (o === knight || o.userData.knightOwn)) { o.visible = false; hidden.push(o); } });
+  return () => hidden.forEach((o) => { o.visible = true; });
+}
+// 主角在画面上的外接框（0–1，x 向右、y 向下）：风格检查（scripts/style.mjs）用它量主角是不是第一读物。
+// 书房用坐姿骑士、塔里用走路骑士；转场里返回 null
+const _kr = { R: new THREE.Vector3(), p: new THREE.Vector3() };
+function knightRect() {
+  const inStudy = mode === 'idle', cam = inStudy ? study.camera : camera;
+  if (!inStudy && mode !== 'run') return null;
+  const box = inStudy ? study.knightBox() : { base: knight.position, height: 1.9, halfWidth: 0.45 };
+  cam.updateMatrixWorld();
+  _kr.R.setFromMatrixColumn(cam.matrixWorld, 0); _kr.R.y = 0; _kr.R.normalize();
+  let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+  for (const sx of [-1, 1]) for (const h of [0, box.height]) {
+    _kr.p.copy(box.base).addScaledVector(_kr.R, sx * box.halfWidth).add(new THREE.Vector3(0, h, 0)).project(cam);
+    const x = _kr.p.x * 0.5 + 0.5, y = 0.5 - _kr.p.y * 0.5;
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+  }
+  return { x0, y0, x1, y1 };
+}
 export const magicTower = {
+  /** 调试 / 风格检查：主角在画面上的外接框 */
+  knightRect,
+  /** 调试 / 风格检查：之后画的帧临时藏掉特效（{ fx: false }）或骑士（{ knight: false }）；null 恢复 */
+  setDebugView(v) { debugView = v; },
   /** 有会话开始跑：书房 → 进塔 */
   enter: enterTower,
   /** 全部结束：塔 → 回书房 */

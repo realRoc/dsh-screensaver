@@ -6,7 +6,7 @@ export function buildStudy(H) {
   const {
     THREE, makeCanvas, pixelTex, shade, mulberry32, makeShelfTextures, makeSoftCanvas,
     pointsMaterial, flameMaterial, COMMON_GLSL, NOISE_GLSL, SOFT_POINT_FRAG, BOOK_COLORS,
-    makePageCanvas, makeCoverCanvas, makeKnightMesh, orientKnight, setKnightLights, makePageBurst, sitHands, sitTurn,
+    makePageCanvas, makeCoverCanvas, makeKnightMesh, orientKnight, setKnightLights, setKnightRim, makeQuietZone, placeQuietZone, makePageBurst, sitHands, sitTurn,
     glintGeometry, makeGlintMaterial,
   } = H;
   const V3 = THREE.Vector3;
@@ -34,9 +34,22 @@ export function buildStudy(H) {
   const darkWood = new THREE.MeshStandardMaterial({ color: 0x3a2414, roughness: 0.7, flatShading: true });
   const waxMat = new THREE.MeshStandardMaterial({ color: 0xf2e6cc, emissive: 0xff9a50, emissiveIntensity: 0.25, roughness: 0.5 });
   const glint = makeGlintMaterial();
-  const glowBasic = (r, g, b) => new THREE.MeshBasicMaterial({ color: new THREE.Color(r, g, b) });
+  // 《Pixel Magic》圣经 §2：书房的道具都「睡着」——平时不自己发光，只被月光和书桌烛火照到；进塔转场时（pose.surge）一起醒来。
+  // 所有自发光的小东西都登记在 sleepers 里，每帧按 awake 在「睡着」和「醒着」之间插值
+  const uAwake = { value: 0 };
+  const sleepers = [];
+  const glowBasic = (r, g, b, sleep = 0.1) => {
+    const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(r, g, b) });
+    sleepers.push({ c: m.color, base: m.color.clone(), sleep });
+    return m;
+  };
   const softTex = new THREE.CanvasTexture(makeSoftCanvas('rgba(255,255,255,1)', 'rgba(255,255,255,0)'));
-  const halo = (col, s) => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: softTex, color: new THREE.Color(...col), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); sp.scale.setScalar(s); return sp; };
+  const halo = (col, s, sleep = 0.1) => {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: softTex, color: new THREE.Color(...col), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    sp.scale.setScalar(s);
+    if (sleep < 1) sleepers.push({ c: sp.material.color, base: sp.material.color.clone(), sleep });
+    return sp;
+  };
 
   // 菱形晶片：细长菱形，边缘亮、芯稍暗，按 vRot 转
   const SHARD_FRAG = /* glsl */`
@@ -71,12 +84,13 @@ export function buildStudy(H) {
     for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
       const dx = x - 63.5, dy = y - 63.5, d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
       if (d > 63) continue;
-      let col = shade('#4a1426', 0.8 + 0.25 * Math.sin(d * 0.4));
+      // 地毯在主角脚下：压一档、去掉跳的浅蓝（圣经 §2：书房的亮和饱和留给骑士、书和月光）
+      let col = shade('#3c1424', 0.8 + 0.25 * Math.sin(d * 0.4));
       if (Math.abs(d - 60) < 1.5 || Math.abs(d - 50) < 0.8 || Math.abs(d - 30) < 0.8) col = '#c9993c';
       if (d > 50 && d < 60 && Math.abs(Math.sin(a * 12)) < 0.12) col = '#e2bb63';
-      if (d > 30 && d < 50) { const tri = Math.abs(((a / (Math.PI * 2) * 6 + 10) % 1) - 0.5) * 2; if (Math.abs(tri * 20 + 30 - d) < 0.9) col = '#7fb8e6'; }
+      if (d > 30 && d < 50) { const tri = Math.abs(((a / (Math.PI * 2) * 6 + 10) % 1) - 0.5) * 2; if (Math.abs(tri * 20 + 30 - d) < 0.9) col = '#4e6a96'; }
       if (d < 30 && Math.abs(Math.sin(a * 4 + d * 0.3)) < 0.1) col = '#2a5aa0';
-      if (d < 8) col = d < 4 ? '#8fd4ff' : '#c9993c';
+      if (d < 8) col = d < 4 ? '#5e86b4' : '#c9993c';
       g.fillStyle = col; g.fillRect(x, y, 1, 1);
     }
     return c;
@@ -280,19 +294,20 @@ export function buildStudy(H) {
   moonBall.position.copy(MOON_POS); moonBall.rotation.set(0.3, -0.6, 0.1); scene.add(moonBall);
   const moonFacing = new V3(-2.2, 2.2, 4.5).sub(MOON_POS).normalize();     // 朝着待机镜头
   {
-    const g = halo([0.22, 0.42, 0.85], MOON_R * 5.2); g.material.fog = false; g.position.copy(MOON_POS).addScaledVector(moonFacing, -1.6); scene.add(g);
+    const g = halo([0.11, 0.21, 0.43], MOON_R * 5.2, 1); g.material.fog = false;   // 月亮是光源不是主角：光晕减半
+    g.position.copy(MOON_POS).addScaledVector(moonFacing, -1.6); scene.add(g);
     // 两道点线符文环（面向镜头，慢慢反向转）
     const ringMat = (r0, r1, n, sp) => new THREE.ShaderMaterial({
-      uniforms: { uTime: H.shared.uTime },
+      uniforms: { uTime: H.shared.uTime, uAwake },
       vertexShader: /* glsl */`varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-      fragmentShader: /* glsl */`uniform float uTime; varying vec2 vP;
+      fragmentShader: /* glsl */`uniform float uTime, uAwake; varying vec2 vP;
         void main(){
           float r = length(vP), a = atan(vP.y, vP.x) + uTime*${sp.toFixed(3)};
           float band = (1.0 - smoothstep(0.0, 0.03, abs(r - ${((r0 + r1) / 2).toFixed(3)})));
           float dots = step(0.55, fract(a*${n.toFixed(1)}/6.2832));
           float tick = step(0.93, fract(a*${(n / 6).toFixed(1)}/6.2832)) * (1.0 - smoothstep(0.0, 0.09, abs(r - ${((r0 + r1) / 2).toFixed(3)})));
           float al = (band*dots*0.5 + tick*0.6) * (0.75 + 0.25*sin(uTime*1.3 + a*3.0));
-          gl_FragColor = vec4(vec3(0.5,0.75,1.3)*al*0.6, 1.0);
+          gl_FragColor = vec4(vec3(0.5,0.75,1.3)*al*0.6*mix(0.06, 1.0, uAwake), 1.0);
         }`,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     });
@@ -309,7 +324,7 @@ export function buildStudy(H) {
       g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
       g2.setAttribute('aA', new THREE.BufferAttribute(a, 1)); g2.setAttribute('aR', new THREE.BufferAttribute(r, 1)); g2.setAttribute('aRand', new THREE.BufferAttribute(rr, 1));
       const pts = new THREE.Points(g2, pointsMaterial(COMMON_GLSL + /* glsl */`
-        attribute float aA, aR, aRand; uniform vec3 uC, uU1, uU2, uF;
+        attribute float aA, aR, aRand; uniform vec3 uC, uU1, uU2, uF; uniform float uAwake;
         varying vec3 vColor; varying float vAlpha; varying float vRot;
         void main(){
           float ang = aA + uTime*(0.03 + 0.05*aRand)*(aRand > 0.5 ? 1.0 : -1.0);
@@ -317,11 +332,11 @@ export function buildStudy(H) {
           vec4 mv = viewMatrix*vec4(p,1.0);
           gl_Position = projectionMatrix*mv;
           float tw = 0.4 + 0.6*pow(0.5 + 0.5*sin(uTime*(1.0 + 2.5*aRand) + aRand*60.0), 3.0);
-          vColor = mix(vec3(0.5,0.78,1.3), vec3(0.9,0.97,1.2), aRand) * 1.3;
+          vColor = mix(vec3(0.5,0.78,1.3), vec3(0.9,0.97,1.2), aRand) * 1.3 * mix(0.08, 1.0, uAwake);
           vAlpha = tw * (1.0 - smoothstep(${(MOON_R * 1.6).toFixed(2)}, ${(MOON_R * 2.3).toFixed(2)}, aR)*0.6);
           vRot = aRand*20.0 + uTime*(0.3 + aRand);
           gl_PointSize = pxSize(${shard ? '0.16 + 0.12*aRand' : '0.05 + 0.06*aRand'}, -mv.z);
-        }`, shard ? SHARD_FRAG : undefined, { uC: { value: MOON_POS }, uU1: { value: u1 }, uU2: { value: u2 }, uF: { value: moonFacing } }));
+        }`, shard ? SHARD_FRAG : undefined, { uC: { value: MOON_POS }, uU1: { value: u1 }, uU2: { value: u2 }, uF: { value: moonFacing }, uAwake }));
       pts.frustumCulled = false; scene.add(pts);
     }
   }
@@ -330,7 +345,7 @@ export function buildStudy(H) {
    * 小物件工厂（蜡烛、结晶、书本最后统一收进 InstancedMesh）
    * ================================================================ */
   const candles = [];
-  function addCandle(x, y, z, h = 0.2, r = 0.035) { candles.push({ x, y, z, h, r }); }
+  function addCandle(x, y, z, h = 0.2, r = 0.035, lit = null) { candles.push({ x, y, z, h, r, lit }); }
   const crystals = [], glintSites = [];
   function addCluster(x, y, z, size = 1, n = 7) {
     glintSites.push(new V3(x, y + 0.15 * size, z));
@@ -379,6 +394,7 @@ export function buildStudy(H) {
     k.position.set(x, y, z); k.rotation.y = rot; k.scale.setScalar(s);
     scene.add(k);
   }
+  let shieldMat = null;
   const glowLights = [];
   function addChest(x, z, rot, s = 1) {
     const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = rot; g.scale.setScalar(s); scene.add(g);
@@ -431,7 +447,7 @@ export function buildStudy(H) {
           float fres = pow(1.0 - clamp(dot(normalize(vN), normalize(vV)), 0.0, 1.0), 2.0);
           float sw = snoise(vP*14.0 + vec3(0.0, uTime*0.6, uTime*0.3));
           float core = smoothstep(0.1, 0.9, sw*0.5 + 0.5);
-          vec3 col = vec3(0.12,0.3,0.6)*0.25 + vec3(0.3,0.6,1.1)*core*(0.25 + uPow*0.8) + vec3(0.6,0.8,1.0)*fres*0.4;
+          vec3 col = vec3(0.12,0.3,0.6)*0.25*(0.4 + 0.6*min(uPow, 1.0)) + vec3(0.3,0.6,1.1)*core*(0.06 + uPow*0.99) + vec3(0.6,0.8,1.0)*fres*0.4*(0.3 + 0.7*min(uPow, 1.0));
           gl_FragColor = vec4(col, 1.0);
         }`,
     });
@@ -464,6 +480,7 @@ export function buildStudy(H) {
     const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.1, 0.5, 8), darkGold); stand.position.y = 0.25; g.add(stand);
     const disc = new THREE.Mesh(new THREE.CircleGeometry(0.32, 40), new THREE.MeshBasicMaterial({ map: runeTex, color: new THREE.Color(1.3, 1.1, 0.6), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     disc.position.y = 0.82; g.add(disc);
+    sleepers.push({ c: disc.material.color, base: disc.material.color.clone(), sleep: 0.15 });   // 星盘的符文盘也睡着
     const rim = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.02, 6, 40), goldMat); rim.position.y = 0.82; g.add(rim);
     const rim2 = rim.clone(); rim2.scale.setScalar(0.75); rim2.rotation.y = Math.PI / 2; g.add(rim2);
     g.userData.spin = [disc, rim2];
@@ -641,6 +658,10 @@ export function buildStudy(H) {
   knight.material.uniforms.uClampY.value = TOP + 0.015;   // 桌面 + 写字垫和金线的厚度
   scene.add(knight);
   const KNIGHT_FACING = new V3(1, 0, 0);
+  // 主角托出来（圣经 §1.1）：身后一圈安静区；轮廓光从长窗来（见 update 里的 setKnightRim）
+  const knightQuiet = makeQuietZone(3.0, 3.0, 0.55);
+  scene.add(knightQuiet);
+  const KNIGHT_CENTER = KNIGHT_POS.clone().add(new V3(0, 0.8, 0));
 
   /* ---------------- 主角书：摊在骑士手下，会翻页 ---------------- */
   const pageTex = pixelTex(makePageCanvas()); pageTex.wrapS = pageTex.wrapT = THREE.ClampToEdgeWrapping;
@@ -714,7 +735,7 @@ export function buildStudy(H) {
   const dW = (lx, lz, ly = TOP) => new V3(DESK_X + lx, ly, lz);    // 桌面局部 → 世界
   // —— 桌面：三枝烛台、蜡烛堆、书摞、墨水和羽毛笔、小星辉仪、小匣子、钥匙、辉石结晶、卷轴、小水晶球
   { const p = dW(0.32, -0.82); addCandelabra(p.x, p.z, 0.5, 3, TOP); }
-  for (const [lx, lz, h] of [[0.12, -0.55, 0.12], [0.2, -0.5, 0.2], [0.05, -0.62, 0.08]]) { const p = dW(lx, lz); addCandle(p.x, p.y, p.z, h); }
+  for (const [lx, lz, h] of [[0.12, -0.55, 0.12], [0.2, -0.5, 0.2], [0.05, -0.62, 0.08]]) { const p = dW(lx, lz); addCandle(p.x, p.y, p.z, h, 0.035, false); }   // 烛台脚边的散蜡烛：熄着
   if (DESK_MODEL) {
     // 书摞、墨水瓶和羽毛笔、卷轴都在 Blender 模型里；只留书摞顶上那支蜡烛（火苗还是实时画的）
     const p = dW(0.32, 0.62); addCandle(p.x, TOP + 0.1, p.z, 0.16);
@@ -752,6 +773,7 @@ export function buildStudy(H) {
     shape.moveTo(-pts[0][0], pts[0][1]); pts.forEach(([x, y]) => shape.lineTo(x, y)); for (let i = pts.length - 2; i >= 0; i--) shape.lineTo(-pts[i][0], pts[i][1]);
     const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2 });
     const shield = new THREE.Mesh(geo, [new THREE.MeshStandardMaterial({ map: mapT, emissiveMap: emT, emissive: 0xffffff, emissiveIntensity: 1.6, metalness: 0.55, roughness: 0.35 }), goldMat]);
+    shieldMat = shield.material[0];
     shield.position.set(DESK_X - 0.62, 0.4, 1.0); shield.rotation.set(-0.12, 0.35, 0.06); scene.add(shield);
     const sword = new THREE.Group(); sword.position.set(DESK_X - 0.64, 0, 1.3); sword.rotation.set(0.0, 0.2, 0.22); scene.add(sword);
     const steel = new THREE.MeshStandardMaterial({ color: 0xc8d4e8, metalness: 0.8, roughness: 0.25 });
@@ -761,6 +783,7 @@ export function buildStudy(H) {
     const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.15, 8), new THREE.MeshStandardMaterial({ color: 0x4a3020 })); grip.position.y = 0.95; sword.add(grip);
     const pom = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 6), goldMat); pom.position.y = 1.04; sword.add(pom);
   }
+  let stoneSpin = 0, astroSpin = 0;
   // —— 地面：左边是宝箱、落地烛台、辉石簇、书山；右边是石柱上的水晶球和魔法石；后面是月神像、半身像、星盘
   addChest(-2.15, 1.0, 0.55, 1.0);
   addCandelabra(-2.9, -0.5, 1.7, 5);
@@ -886,6 +909,8 @@ export function buildStudy(H) {
     const wax = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1.1, 1, 10).translate(0, 0.5, 0), waxMat, candles.length);
     const pud = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), waxMat, candles.length);
     const fp = new Float32Array(candles.length * 3), fr = new Float32Array(candles.length).map(() => Math.random());
+    // 点着的只有书桌一圈（主角的暖光）和窗台上的；其余是熄着的蜡烛（有烛泪、没火苗），转场时一起点亮
+    const lit = new Float32Array(candles.map((c) => (c.lit ?? ((Math.abs(c.x - DESK_X) < 0.9 && Math.abs(c.z) < 1.3 && c.y > TOP - 0.05) || (c.z < -5.4 && c.y > 0.6))) ? 1 : 0));
     candles.forEach((c, i) => {
       M.compose(new V3(c.x, c.y, c.z), q, new V3(c.r, c.h, c.r)); wax.setMatrixAt(i, M);
       M.compose(new V3(c.x, c.y, c.z), q, new V3(c.r * 2.4, 0.015, c.r * 2.2)); pud.setMatrixAt(i, M);
@@ -895,7 +920,9 @@ export function buildStudy(H) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(fp, 3));
     g.setAttribute('aRand', new THREE.BufferAttribute(fr, 1));
-    const fl = new THREE.Points(g, flameMaterial(0.3, 0.5)); fl.frustumCulled = false; scene.add(fl);
+    g.setAttribute('aLit', new THREE.BufferAttribute(lit, 1));
+    const fl = new THREE.Points(g, flameMaterial(0.3, 0.3, uAwake));   // 火苗亮度 0.5 → 0.3：照亮他，但别比他抢眼
+    fl.frustumCulled = false; scene.add(fl);
 
     const cr = new THREE.InstancedMesh(glintGeometry, glint, crystals.length);
     const e = new THREE.Euler();
@@ -1159,11 +1186,13 @@ export function buildStudy(H) {
     } else knFrame = Math.floor(t * 3) % T0;
     orientKnight(knight, camera, KNIGHT_FACING, knFrame);
     setKnightLights(knight, [
-      { pos: candleLight.position, color: [1.0, 0.7, 0.4], pow: 0.4, range: 4.5 },
+      { pos: candleLight.position, color: [1.0, 0.7, 0.4], pow: 0.75, range: 4.5 },   // 书桌烛台：主角的暖光
       { pos: moonSpot.position, color: [0.75, 0.88, 1.0], pow: 0.45, range: 40 },
       { pos: bookLight.getWorldPosition(new V3()), color: [0.6, 0.85, 1.0], pow: 0.1 + pose.pow * 1.4, range: 2.5 },
       { pos: crystalLight.position, color: [0.4, 0.7, 1.0], pow: 0.25 + surge * 0.6, range: 2.5 },
     ]);
+    setKnightRim(knight, moonSpot.position, 1.8 * (1 - 0.7 * k));        // 长窗的月光从他身后来
+    placeQuietZone(knightQuiet, KNIGHT_CENTER, camera, 0.7);
 
     if (pose.rapid && t - lastRapid > 0.07) { lastRapid = t; flipPage(t, 0.36); }
     flips.forEach((f) => {
@@ -1179,16 +1208,22 @@ export function buildStudy(H) {
     bookGlowMat.opacity = Math.min(1, pose.pow * 0.22);
     bookGlow.scale.setScalar(0.5 + pose.pow * 0.9);
     pageMat.emissiveIntensity = bookPageMat.emissiveIntensity = 0.03 + pose.pow * 0.1;
-    glint.emissiveIntensity = 0.28 + surge * 1.8 + 0.04 * Math.sin(t * 2);
-    orbMats.forEach((m) => { m.uniforms.uPow.value = 0.3 + surge * 1.5; });
+    // 醒来的程度：进塔转场里 surge 0 → 1，回书房时 1 → 0
+    const awake = uAwake.value = Math.min(1, surge);
+    sleepers.forEach((s) => s.c.copy(s.base).multiplyScalar(s.sleep + (1 - s.sleep) * awake));
+    if (shieldMat) shieldMat.emissiveIntensity = 0.35 + awake * 1.25;
+    glint.emissiveIntensity = 0.03 + surge * 2.05 + 0.01 * Math.sin(t * 2);
+    orbMats.forEach((m) => { m.uniforms.uPow.value = 0.04 + surge * 1.76; });
 
     mini.userData.rings.forEach((r, i) => { r.rotation.z = t * (0.3 + i * 0.25); r.rotation.y += dt * 0.2 * (i + 1); });
-    astro.userData.spin[0].rotation.z = t * 0.2; astro.userData.spin[1].rotation.z = -t * 0.35;
+    astroSpin += dt * (0.15 + awake * 0.85);                                   // 睡着时慢慢转，醒来转快
+    astro.userData.spin[0].rotation.z = astroSpin * 0.2; astro.userData.spin[1].rotation.z = -astroSpin * 0.35;
     armillaries.forEach((sp, k) => sp.forEach((p, i) => { p.rotation.y = t * (0.08 + i * 0.05) * (i % 2 ? -1 : 1) + k; }));
     globe.rotation.y = t * 0.05;
     globe.children.forEach((c, i) => { if (c.userData.ring) c.rotation.z = t * 0.1 * (i % 2 ? 1 : -1); });
+    stoneSpin += dt * (0.12 + surge * 5);                                     // 魔法石睡着时几乎停住
     floatStones.forEach((s) => {
-      const a = s.a + t * s.sp * (1 + surge * 4);
+      const a = s.a + stoneSpin * s.sp;
       s.st.position.set(s.center.x + Math.cos(a) * s.radius, s.center.y + s.h + Math.sin(t * 0.9 + s.a) * 0.06, s.center.z + Math.sin(a) * s.radius);
       s.st.rotation.set(t * 0.5 + s.a, t * 0.7, 0);
       s.ring.position.copy(s.st.position); s.ring.rotation.set(Math.PI / 2 + Math.sin(t + s.a) * 0.3, 0, t);
@@ -1198,13 +1233,15 @@ export function buildStudy(H) {
     floaters.flames.attributes.position.needsUpdate = true;
     candleLight.intensity = 1.3 + Math.sin(t * 9) * 0.12 + Math.sin(t * 23) * 0.06;
     moonSpot.intensity = 15 * (1 - 0.7 * k);                 // 镜头扎进书里时月光收一收，免得书页过曝
-    glowLights.forEach((l, i) => { if (l.userData.base === undefined) l.userData.base = l.intensity; l.intensity = l.userData.base * (0.9 + 0.1 * Math.sin(t * (5 + i) + i)) * (1 + surge * 1.5); });
+    glowLights.forEach((l, i) => { if (l.userData.base === undefined) l.userData.base = l.intensity; l.intensity = l.userData.base * (0.9 + 0.1 * Math.sin(t * (5 + i) + i)) * awake * (1 + surge * 1.5); });   // 宝箱和落地烛台的光：睡着时关
   }
 
   // debugCam: [[x,y,z], [lookX,lookY,lookZ], fov]，只在调试时从控制台设
   const api = {
     scene, camera, update, debugCam: null,
     focusWorld: () => knight.position.clone().add(new V3(0.4, 0.9, 0)),
+    /** 坐着的骑士大致占的空间（风格检查、主角身后的安静区用）：脚底位置、头顶高度、半宽 */
+    knightBox: () => ({ base: KNIGHT_POS, height: 1.55, halfWidth: 0.5 }),
     turnPage: () => { nextTurn = -1; },          // 调试：马上翻一页
     get turning() { return turning; },
     bookWorld,

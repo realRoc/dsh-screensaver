@@ -16,6 +16,11 @@ truth is [docs/themes.md](../../docs/themes.md); the shell is `app/shell/`. Refe
 
 Read the one closest to your idea before you start; copy its `scripts/build.mjs`, demo panel and session code.
 
+**Series with their own art direction.** A theme that belongs to the *Pixel Magic* series (today: `themes/magic-tower`)
+must also follow [docs/pixel-magic/BIBLE.md](../../docs/pixel-magic/BIBLE.md): visual hierarchy, composition, light,
+palette, pixel grid, effects and animation rules, plus the style check. That bible applies to this series only; other
+themes keep a free art style.
+
 ## The rules
 
 ### 1. Two scenes, driven by sessions
