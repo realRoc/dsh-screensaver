@@ -52,6 +52,8 @@ Then `/screensaver magic-tower`, or set `theme: magic-tower` in the dsh-screensa
   simulate Touch ID). `index.html?lang=en#demo` for English. The demo hides the interface after 30 s without input
   too; `#demo,nopure` keeps it on (used to record the README GIFs).
 - Built to the rules in [skills/dsh-screensaver-theme](../../skills/dsh-screensaver-theme/SKILL.md).
+- Part of the *Pixel Magic* series: its look follows [docs/pixel-magic/BIBLE.md](../../docs/pixel-magic/BIBLE.md)
+  (draft; the audit of the current scenes is [AUDIT.md](../../docs/pixel-magic/AUDIT.md)).
 
 ## Instrument effects
 
