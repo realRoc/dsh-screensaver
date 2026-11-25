@@ -1351,6 +1351,9 @@ const glintMat = clipped(makeGlintMaterial());
   tower.add(sparks); fxObjects.push(sparks);
 }
 
+// stageU 每帧由事件的余韵（共鸣、光环闪、浑天仪脉冲、正在进行的大事件）算出来，0 = 平时，1 = 事件正盛
+const stageU = { value: 0 };
+
 /* ---------------- 两串吊灯垂入深井（随塔周期排布） ---------------- */
 let chandelierCrystalMat = null;
 {
@@ -2001,8 +2004,6 @@ function orientKnight(mesh, cam, facing, frame) {
   u.uCell.value.set(frame, dir);
 }
 // 天井中心那几样（浑天仪、吊灯、符文环）平时是暗的剪影，参与事件时才亮起来（圣经 §3「中心留给事件」）。
-// stageU 每帧由事件的余韵（共鸣、光环闪、浑天仪脉冲、正在进行的大事件）算出来，0 = 平时，1 = 事件正盛
-const stageU = { value: 0 };
 /** 轮廓光：pos 是光源的世界位置（在主角身后），pow 0 = 关 */
 function setKnightRim(mesh, pos, pow, color = null) {
   const u = mesh.material.uniforms;

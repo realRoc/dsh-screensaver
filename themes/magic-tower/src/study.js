@@ -294,7 +294,8 @@ export function buildStudy(H) {
   moonBall.position.copy(MOON_POS); moonBall.rotation.set(0.3, -0.6, 0.1); scene.add(moonBall);
   const moonFacing = new V3(-2.2, 2.2, 4.5).sub(MOON_POS).normalize();     // 朝着待机镜头
   {
-    const g = halo([0.11, 0.21, 0.43], MOON_R * 5.2, 1); g.material.fog = false;   // 月亮是光源不是主角：光晕减半 g.position.copy(MOON_POS).addScaledVector(moonFacing, -1.6); scene.add(g);
+    const g = halo([0.11, 0.21, 0.43], MOON_R * 5.2, 1); g.material.fog = false;   // 月亮是光源不是主角：光晕减半
+    g.position.copy(MOON_POS).addScaledVector(moonFacing, -1.6); scene.add(g);
     // 两道点线符文环（面向镜头，慢慢反向转）
     const ringMat = (r0, r1, n, sp) => new THREE.ShaderMaterial({
       uniforms: { uTime: H.shared.uTime, uAwake },
@@ -920,7 +921,8 @@ export function buildStudy(H) {
     g.setAttribute('position', new THREE.BufferAttribute(fp, 3));
     g.setAttribute('aRand', new THREE.BufferAttribute(fr, 1));
     g.setAttribute('aLit', new THREE.BufferAttribute(lit, 1));
-    const fl = new THREE.Points(g, flameMaterial(0.3, 0.3, uAwake));   // 火苗亮度 0.5 → 0.3：照亮他，但别比他抢眼 fl.frustumCulled = false; scene.add(fl);
+    const fl = new THREE.Points(g, flameMaterial(0.3, 0.3, uAwake));   // 火苗亮度 0.5 → 0.3：照亮他，但别比他抢眼
+    fl.frustumCulled = false; scene.add(fl);
 
     const cr = new THREE.InstancedMesh(glintGeometry, glint, crystals.length);
     const e = new THREE.Euler();
