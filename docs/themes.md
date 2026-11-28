@@ -46,7 +46,7 @@ Listen with `addEventListener('message', ...)` and check `event.source === paren
   sessions: [
     {
       id: 'dsh:session-…',
-      kind: 'claude' | 'codex' | 'dsh',
+      kind: 'claude' | 'codex' | 'dsh' | 'antigravity',
       name: 'Fix flaky test',
       status: 'running' | 'waiting' | 'done' | 'aborted',
       progress: 'bash npm test',   // one short line, already localized

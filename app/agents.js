@@ -13,6 +13,15 @@
 //   会话被一个 dsh 进程打开时，那个进程一直用 flock 锁着同目录的 session.lock（进程没了内核就放锁，不会留死锁）：
 //   有进程开着 session.lock（lsof）= 会话还在；最后一个 turn/start 后面没有 turn/end = 这一轮在跑；
 //   还有没回复的 approval/asked、没回答的 ask_user_question = 等你确认。名字取最后一个 session/title。
+// - Antigravity：~/.gemini/antigravity/presence/<会话>.lock，会话被 language_server 载入时它一直开着（lsof），
+//   Antigravity 退了、会话被卸下就放掉（文件留着，每轮开始时刷新时间）。这一轮跑完、会话还开着时锁不放，
+//   所以还要看 conversation_summaries.db（SQLite，Antigravity 自己的会话列表）的 status：
+//   锁被开着、status 是 CASCADE_RUN_STATUS_RUNNING / BUSY 才算在跑（这张表隔几步写一次，跑完那一刻会写成 IDLE）。
+//   名字、这一轮几点开始、是不是 subagent、有没有被杀掉也从这张表来；表里还没有的新会话等它写进来再算。
+//   进展取 conversations/<会话>.db 最后一步里的工具调用
+//   （protobuf：{1: call_…, 2: 工具名, 3: JSON 参数}）；步骤跑完才写进库，所以最后一步要是「打算调工具」，那就是正在调它，
+//   打算调的是 ask_question = 等你回答。最后一步被取消 / 出错 = 中断。
+//   SQLite 用 Node 自带的 node:sqlite（Electron 45 / Node 24 有）；没有就只有「在跑」，没名字和进展。
 //
 // 屏保这一轮里见过在跑的会话会一直留在列表里，结束了标成「已完成」或「已中断」，屏保关了就清空。
 import { execFile } from 'node:child_process'
@@ -21,7 +30,7 @@ import { zstdDecompressSync } from 'node:zlib'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
-export const KINDS = ['claude', 'codex', 'dsh']
+export const KINDS = ['claude', 'codex', 'dsh', 'antigravity']
 /** 进展里的字跟屏保语言走（saver.ts 的 saverLang） */
 const S = {
   zh: {
@@ -400,8 +409,8 @@ export function dshFold(events, lang = 'zh') {
   }
 }
 
-/** 哪些 session.lock 正被进程开着（= 会话被某个 dsh 进程打开着）。lsof 在后台跑，结果先用上次的 */
-function dshLockProbe() {
+/** 哪些锁文件正被进程开着（dsh 的 session.lock、Antigravity 的 presence 锁）。lsof 在后台跑，结果先用上次的 */
+function lockProbe() {
   if (process.platform === 'win32') return () => null // Windows 上 dsh 用的是命名信号量，这里看不了
   let held = new Set()
   let busy = false
@@ -420,6 +429,149 @@ function dshLockProbe() {
       })
     }
     return held
+  }
+}
+
+// ---------------------------------------------------------------- Antigravity
+const AG_DAYS = 7 // presence 锁文件每轮开始刷新时间：只看最近几天动过的
+const AG_RUNNING = new Set(['CASCADE_RUN_STATUS_RUNNING', 'CASCADE_RUN_STATUS_BUSY'])
+const AG_STEP_PLANNER = 15 // CORTEX_STEP_TYPE_PLANNER_RESPONSE：模型这一步说的话、打算调的工具
+const AG_STEP_ERROR = 17 // CORTEX_STEP_TYPE_ERROR_MESSAGE：接口报错（会自己重试，最后一步还是它 = 这一轮出错停了）
+const AG_STEP_ABORTED = new Set([6, 7, 12]) // CORTEX_STEP_STATUS_CANCELED / ERROR / INTERRUPTED
+
+let sqliteMod
+/** Node 自带的 node:sqlite；没有（老 Node）返回 null */
+function sqlite() {
+  if (sqliteMod === undefined) {
+    try {
+      sqliteMod = process.getBuiltinModule?.('node:sqlite') ?? null
+    } catch {
+      sqliteMod = null
+    }
+  }
+  return sqliteMod
+}
+/**
+ * 只读打开 SQLite 跑一句查询，出错返回 null。
+ * 库开着 WAL：有人在写（有 -wal / -shm）照常只读打开；刚合并完、-shm 不在时只读打不开，就按不可变文件读一次。
+ */
+export function sqliteAll(path, sql, params = []) {
+  const m = sqlite()
+  if (!m || !existsSync(path)) return null
+  for (const target of [path, `file:${encodeURI(path)}?immutable=1`]) {
+    let db = null
+    try {
+      db = new m.DatabaseSync(target, { readOnly: true })
+      return db.prepare(sql).all(...params)
+    } catch {
+    } finally {
+      try {
+        db?.close()
+      } catch {}
+    }
+  }
+  return null
+}
+
+/** 解一层 protobuf：[[字段号, 数字 | Buffer | null]]；不像 protobuf 就返回 null */
+function pbFields(buf) {
+  const out = []
+  let p = 0
+  const varint = () => {
+    let v = 0
+    let s = 0
+    let c
+    do {
+      if (p >= buf.length || s > 63) throw new Error('varint')
+      c = buf[p++]
+      v += (c & 0x7f) * 2 ** s
+      s += 7
+    } while (c & 0x80)
+    return v
+  }
+  try {
+    while (p < buf.length) {
+      const key = varint()
+      const f = Math.floor(key / 8)
+      const w = key % 8
+      if (f === 0) return null
+      if (w === 0) out.push([f, varint()])
+      else if (w === 1 || w === 5) {
+        p += w === 1 ? 8 : 4
+        if (p > buf.length) return null
+        out.push([f, null])
+      } else if (w === 2) {
+        const n = varint()
+        if (p + n > buf.length) return null
+        out.push([f, buf.subarray(p, p + n)])
+        p += n
+      } else return null
+    }
+  } catch {
+    return null
+  }
+  return out
+}
+/** 一步的 protobuf 里找工具调用：子消息 { 1: 'call_…', 2: 工具名, 3: JSON 参数 }，返回最后一个 */
+export function agToolCall(buf, depth = 0) {
+  const fields = pbFields(buf)
+  if (!fields) return null
+  const str = (f) => {
+    const v = fields.find((x) => x[0] === f)?.[1]
+    return Buffer.isBuffer(v) ? v.toString('utf8') : null
+  }
+  const name = str(2)
+  if (str(1)?.startsWith('call_') && name && /^[a-z][a-z0-9_]{0,63}$/.test(name)) return { name, args: str(3) ?? '' }
+  if (depth >= 8) return null
+  let found = null
+  for (const [, v] of fields) {
+    if (!Buffer.isBuffer(v) || v.length < 4) continue
+    const c = agToolCall(v, depth + 1)
+    if (c) found = c
+  }
+  return found
+}
+/** Antigravity 的工具调用 → 一行人话（参数名是 CommandLine / Path / Query 这种大写开头的） */
+export function agTool(name, args) {
+  let a = args
+  if (typeof a === 'string') {
+    try {
+      a = JSON.parse(a)
+    } catch {
+      a = {}
+    }
+  }
+  const o = {}
+  if (a && typeof a === 'object') for (const [k, v] of Object.entries(a)) o[k.toLowerCase()] = v
+  const detail = brief({
+    command: o.commandline ?? o.command,
+    path: o.path ?? o.absolutepath ?? o.targetfile ?? o.file,
+    query: o.query ?? o.pattern ?? o.url,
+  })
+  return `${clip(name, 32)} ${detail}`.trim()
+}
+/** conversations/<会话>.db 的最后一步 → 最近在干什么、是不是在等你、这一轮（要是已经停了）怎么结束的 */
+export function agTail(step, lang = 'zh') {
+  const t = S[lang]
+  if (!step) return { progress: t.think, waiting: false, ended: 'done' }
+  const payload = step.step_payload ? Buffer.from(step.step_payload) : null
+  const call = payload ? agToolCall(payload) : null
+  const planned = Number(step.step_type) === AG_STEP_PLANNER
+  const waiting = planned && call?.name === 'ask_question'
+  let progress
+  if (waiting) progress = t.ask
+  else if (call) progress = agTool(call.name, call.args)
+  else progress = planned ? t.reply : t.think
+  const failed = AG_STEP_ABORTED.has(Number(step.status)) || Number(step.step_type) === AG_STEP_ERROR
+  return { progress, waiting, ended: failed ? 'aborted' : 'done' }
+}
+/** workspace_uris 是 JSON 数组 ["file:///…/项目"]：取第一个的目录名 */
+function agWorkspaceName(uris) {
+  try {
+    const first = JSON.parse(String(uris ?? ''))?.[0]
+    return typeof first === 'string' && first ? basename(decodeURIComponent(new URL(first).pathname)) : ''
+  } catch {
+    return ''
   }
 }
 
@@ -473,7 +625,9 @@ export class AgentWatcher {
     this.alive = opts.alive ?? pidAlive
     this.codexAlive = opts.codexAlive ?? codexProbe()
     this.dshHome = opts.dshHome ?? (opts.home ? join(opts.home, '.dsh') : process.env.DSH_HOME?.trim() || join(this.home, '.dsh'))
-    this.dshLocks = opts.dshLocks ?? dshLockProbe()
+    this.dshLocks = opts.dshLocks ?? lockProbe()
+    this.agHome = opts.agHome ?? join(this.home, '.gemini', 'antigravity')
+    this.agLocks = opts.agLocks ?? lockProbe() // 跟 dsh 的分开：各自一份 lsof 结果
     this.lang = opts.lang ?? 'zh'
   }
   /** 开始盯：有变化才回调（第一次一定回调） */
@@ -510,7 +664,7 @@ export class AgentWatcher {
   }
   /** 看一眼，更新列表 */
   poll() {
-    const seen = [...this.claude(), ...this.codex(), ...this.dsh()]
+    const seen = [...this.claude(), ...this.codex(), ...this.dsh(), ...this.antigravity()]
     const byId = new Map(seen.map((s) => [s.id, s]))
     for (const s of seen) {
       if (!s.live) continue
@@ -529,7 +683,7 @@ export class AgentWatcher {
       if (t.status === 'done' || t.status === 'aborted') continue
       const s = byId.get(t.id)
       if (s?.live) continue
-      if (s) t.name = s.name // Codex 的线程名可能跑到一半才起好
+      if (s) t.name = s.name // Codex 的线程名、Antigravity 的标题可能跑到一半才起好
       t.status = s?.ended ?? 'aborted' // 文件都没了：当它中断了
       t.progress = t.status === 'done' ? S[this.lang].done : S[this.lang].aborted
       t.endedAt = this.now()
@@ -724,6 +878,66 @@ export class AgentWatcher {
         ended: f.ended ?? (open ? 'done' : 'aborted'),
         progress: f.progress,
         startedAt: f.turnStartedAt || now,
+      })
+    }
+    return out
+  }
+  antigravity() {
+    const root = this.agHome
+    const presence = join(root, 'presence')
+    const now = this.now()
+    let names
+    try {
+      names = readdirSync(presence)
+    } catch {
+      return []
+    }
+    const cand = []
+    for (const f of names) {
+      const id = /^([0-9a-f-]{36})\.lock$/.exec(f)?.[1]
+      if (!id) continue
+      const lock = join(presence, f)
+      const key = `antigravity:${id}`
+      let mtime
+      try {
+        mtime = statSync(lock).mtimeMs
+      } catch {
+        continue
+      }
+      if (now - mtime > AG_DAYS * 86400_000 && !this.tracked.has(key)) continue
+      cand.push({ id, key, lock, mtime })
+    }
+    if (!cand.length) return []
+    const held = this.agLocks(cand.map((c) => c.lock))
+    if (!held) return []
+    const want = cand.filter((c) => held.has(c.lock) || this.tracked.has(c.key))
+    if (!want.length) return []
+    const rows = sqliteAll(
+      join(root, 'conversation_summaries.db'),
+      `select conversation_id, title, status, workspace_uris, parent_conversation_id, nesting_depth, killed, last_user_input_time
+       from conversation_summaries where conversation_id in (${want.map(() => '?').join(',')})`,
+      want.map((c) => c.id),
+    )
+    const meta = new Map((rows ?? []).map((r) => [r.conversation_id, r]))
+    const out = []
+    for (const { id, key, lock, mtime } of want) {
+      const r = meta.get(id)
+      if (r && (r.parent_conversation_id || Number(r.nesting_depth) > 0)) continue // subagent 的会话算在父会话里
+      const killed = !!r && (Number(r.killed) > 0 || r.status === 'CASCADE_RUN_STATUS_CANCELING')
+      if (!r && !this.tracked.has(key)) continue // 摘要表里还没有：不知道在不在跑，等它写进来
+      const live = held.has(lock) && !killed && AG_RUNNING.has(String(r?.status ?? ''))
+      const last = sqliteAll(join(root, 'conversations', `${id}.db`), 'select step_type, status, step_payload from steps order by idx desc limit 1')
+      const tail = agTail(last?.[0], this.lang)
+      const started = Date.parse(String(r?.last_user_input_time ?? '').replace(' ', 'T'))
+      out.push({
+        id: key,
+        kind: 'antigravity',
+        name: clip(String(r?.title ?? '').trim() || agWorkspaceName(r?.workspace_uris) || 'Antigravity', 40),
+        live,
+        waiting: live && tail.waiting,
+        ended: killed ? 'aborted' : tail.ended,
+        progress: tail.progress,
+        startedAt: Number.isFinite(started) && started > 0 ? started : mtime,
       })
     }
     return out

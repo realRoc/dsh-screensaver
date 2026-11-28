@@ -61,7 +61,7 @@ idle ──sessions live, idle ≥ 1.5 s──▶ enter ──▶ run ──noth
   `wrapping up`. Footer: `Done n · Stopped n` and how long this run has lasted.
 - `progress` comes from fixed templates in `app/agents.js` (`读取 x` / `Read x`, `本轮完成` / `Turn finished`, …). A
   theme may reword the known templates in its own voice; keep file names and commands as they are.
-- Re-render at most 4 times a second. Validate every field (`id` string, `kind` one of the three, `status` one of the
+- Re-render at most 4 times a second. Validate every field (`id` string, `kind` one of the four, `status` one of the
   four, `startedAt` number) and treat names and steps as text, never HTML.
 
 ### 3. Top-right status bar and clock

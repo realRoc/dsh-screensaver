@@ -49,6 +49,9 @@
   .chip.codex i { width: 22px; height: 22px; display: block; background: url(__ICON_CODEX__) center / cover no-repeat; }
   .chip.dsh { background: #fff; box-shadow: none; }
   .chip.dsh i { width: 17px; height: 17px; display: block; background: url(__ICON_DSH__) center / contain no-repeat; }
+  /* Antigravity 用它的 App 图标（白底圆角块，跟 Codex 一样整块铺满） */
+  .chip.antigravity { background: none; box-shadow: none; overflow: hidden; }
+  .chip.antigravity i { width: 22px; height: 22px; display: block; background: url(__ICON_ANTIGRAVITY__) center / cover no-repeat; }
   .name { font-size: 13.5px; color: #eaf4ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .prog { font: 11.5px/1.5 var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
   .prog .caret { color: #6cc6ff; margin-right: 5px; }
@@ -115,6 +118,7 @@
   <button data-a="claude">+ Claude Code</button>
   <button data-a="codex">+ Codex</button>
   <button data-a="dsh">+ DeepSeek Harness</button>
+  <button data-a="antigravity">+ Antigravity</button>
   <button data-a="done">完成一个</button>
   <button data-a="abort">中断一个</button>
   <button data-a="wait">等你确认</button>
