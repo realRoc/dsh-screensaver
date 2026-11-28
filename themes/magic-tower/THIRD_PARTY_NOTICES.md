@@ -10,8 +10,8 @@
 ## Product icons
 
 The theme labels sessions with each product's own icon: the Claude mark (`assets/claude.png`), the Codex app icon
-(`assets/codex.png`) and the DeepSeek Harness whale (`assets/dsh.svg`). Claude is a trademark of Anthropic, Codex of
-OpenAI, and DeepSeek of DeepSeek. The icons are used only to identify which product a session belongs to; this project
+(`assets/codex.png`), the DeepSeek Harness whale (`assets/dsh.svg`) and the Antigravity app icon (`assets/antigravity.png`).
+Claude is a trademark of Anthropic, Codex of OpenAI, DeepSeek of DeepSeek, and Antigravity of Google. The icons are used only to identify which product a session belongs to; this project
 is not affiliated with or endorsed by these companies.
 
 ## Original work

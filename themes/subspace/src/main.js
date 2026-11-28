@@ -1054,7 +1054,7 @@ function updateHud(dt, running) {
 
 // ============================================================ 会话
 // dsh-screensaver 读本机 Claude Code / Codex / DeepSeek Harness 会话（app/agents.js），经屏保外壳 postMessage 过来：
-//   { type: 'desk:sessions', primary, lowPower, sessions: [{ id, kind: 'claude'|'codex'|'dsh', name, status: 'running'|'waiting'|'done'|'aborted', progress, startedAt, endedAt? }] }
+//   { type: 'desk:sessions', primary, lowPower, sessions: [{ id, kind: 'claude'|'codex'|'dsh'|'antigravity', name, status: 'running'|'waiting'|'done'|'aborted', progress, startedAt, endedAt? }] }
 // 列表里是这一轮屏保见过在跑的会话；结束的会留着，这里只显示本次跃迁里的。
 const ST = TX.st
 const isLive = (s) => s.status === 'running' || s.status === 'waiting'
@@ -1063,7 +1063,7 @@ let voyageWall = 0 // 本次跃迁开始的钟点（毫秒）
 const rows = new Map()
 
 function valid(s) {
-  return s && typeof s.id === 'string' && (s.kind === 'claude' || s.kind === 'codex' || s.kind === 'dsh') && s.status in ST && typeof s.startedAt === 'number'
+  return s && typeof s.id === 'string' && (s.kind === 'claude' || s.kind === 'codex' || s.kind === 'dsh' || s.kind === 'antigravity') && s.status in ST && typeof s.startedAt === 'number'
 }
 function setSessions(list) {
   sessions = list.filter(valid).map((s) => ({ ...s, name: String(s.name ?? ''), progress: String(s.progress ?? '') }))
@@ -1151,6 +1151,7 @@ if (DEMO) {
     claude: ZH ? ['读取 saver.ts', '搜索 "sessionStatus"', '编辑 main.ts', 'Bash npm test', 'Bash npm run typecheck', 'subagent：查 Codex 日志格式', '思考中…'] : ['Read saver.ts', 'Search "sessionStatus"', 'Edit main.ts', 'Bash npm test', 'Bash npm run typecheck', 'Subagent: check Codex log format', 'Thinking…'],
     codex: ['exec rg -n "saver" src', 'apply_patch', 'exec npm run build', 'exec gh pr view 10', ZH ? '推理中…' : 'Reasoning…', 'exec npx vitest run'],
     dsh: ['bash npm test', 'read_file agents.js', 'edit_file saver.js', ZH ? '思考中…' : 'Thinking…', 'web_search zstd frame format'],
+    antigravity: ['run_command npm test', 'read_file agents.js', 'edit_file main.js', ZH ? '思考中…' : 'Thinking…', 'search_web protobuf wire format'],
   }
   const demo = []
   let seq = 0
@@ -1184,14 +1185,14 @@ if (DEMO) {
     $('devState').textContent = state
   }
   const NAMES = ZH
-    ? { claude: ['重构 IM 限流', '写屏保单测', '修 room 光照'], codex: ['迁移 vite 6', 'review PR #11', '补 README'], dsh: ['整理 changelog', '修 CI', '写插件文档'] }
-    : { claude: ['Refactor rate limiter', 'Write screen saver tests', 'Fix room lighting'], codex: ['Migrate to Vite 6', 'review PR #11', 'Update README'], dsh: ['Tidy the changelog', 'Fix CI', 'Write plugin docs'] }
+    ? { claude: ['重构 IM 限流', '写屏保单测', '修 room 光照'], codex: ['迁移 vite 6', 'review PR #11', '补 README'], dsh: ['整理 changelog', '修 CI', '写插件文档'], antigravity: ['接 Antigravity 会话', '修登录页', '迁移数据库'] }
+    : { claude: ['Refactor rate limiter', 'Write screen saver tests', 'Fix room lighting'], codex: ['Migrate to Vite 6', 'review PR #11', 'Update README'], dsh: ['Tidy the changelog', 'Fix CI', 'Write plugin docs'], antigravity: ['Hook up Antigravity sessions', 'Fix the login page', 'Migrate the database'] }
   dev.addEventListener('click', (e) => {
     const a = e.target.closest('button')?.dataset.a
     if (!a) return
     auto = false
     const live = demo.filter(isLive)
-    if (a === 'claude' || a === 'codex' || a === 'dsh') add(a, pick(NAMES[a]))
+    if (a === 'claude' || a === 'codex' || a === 'dsh' || a === 'antigravity') add(a, pick(NAMES[a]))
     if (a === 'done') finish(live[0], 'done')
     if (a === 'abort') finish(live[0], 'aborted')
     if (a === 'wait' && live[0]) Object.assign(live[0], { status: 'waiting', progress: D.wait2 })

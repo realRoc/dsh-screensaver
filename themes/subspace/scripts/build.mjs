@@ -16,6 +16,7 @@ function write(js) {
     .replaceAll('__ICON_CLAUDE__', icon('claude.png'))
     .replaceAll('__ICON_CODEX__', icon('codex.png'))
     .replaceAll('__ICON_DSH__', icon('dsh.svg'))
+    .replaceAll('__ICON_ANTIGRAVITY__', icon('antigravity.png'))
     .replace('/*__SCRIPT__*/', () => js.replace(/<\/script/gi, '<\\/script'))
   writeFileSync(join(ROOT, 'index.html'), html)
   console.log(`index.html ${(html.length / 1024).toFixed(0)} KB`)

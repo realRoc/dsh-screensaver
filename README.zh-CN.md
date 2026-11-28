@@ -1,6 +1,6 @@
 # dsh-screensaver：让 AI agent 在你离开时继续工作的 macOS 屏保
 
-起身倒杯水、开个会、出门吃饭，Claude Code、Codex、DeepSeek Harness 这些 AI coding agent 还在跑，屏幕却不想让人看见。
+起身倒杯水、开个会、出门吃饭，Claude Code、Codex、DeepSeek Harness、Antigravity 这些 AI coding agent 还在跑，屏幕却不想让人看见。
 dsh-screensaver 就是为这种时候做的：样子跟 Mac 锁屏一样，回来摸一下 Touch ID 就解开；屏保期间电脑不睡、屏幕不黑，
 合上盖子也可以不睡；主题还能实时显示每个 agent 会话在跑、在等你确认，还是已经结束。
 
@@ -159,8 +159,9 @@ npx dsh-screensaver setup               # 改配置：合盖不睡（顺手授�
 | Claude Code | `~/.claude/sessions/<pid>.json`、`~/.claude/projects/**.jsonl` | 进程存活且状态为 busy；请求权限或等待输入时算「等你确认」 |
 | OpenAI Codex | `~/.codex/sessions/年/月/日/rollout-*.jsonl`、`~/.codex/session_index.jsonl` | 最后一个 `task_started` 之后没有 `task_complete` / `turn_aborted` |
 | DeepSeek Harness | `$DSH_HOME/sessions/*/*/session.v4.jsonl.zstd` 和 `session.lock` | 有 dsh 进程持有会话锁，且最后一个 `turn/start` 之后没有 `turn/end`；有未处理的 `approval/asked` 或未回答的 `ask_user_question` 时算「等你确认」 |
+| Google Antigravity | `~/.gemini/antigravity/presence/<会话>.lock`、`conversation_summaries.db`、`conversations/<会话>.db`（SQLite，只读） | Antigravity 的 language_server 开着这个会话的 presence 锁；最后打算调的工具是 `ask_question` 时算「等你确认」 |
 
-主题用各家产品自己的图标区分会话（Claude 的标志、Codex 的 App 图标、DeepSeek Harness 的鲸鱼）。这些图标是各公司的商标，这里只用来标明会话来自哪个产品。
+主题用各家产品自己的图标区分会话（Claude 的标志、Codex 的 App 图标、DeepSeek Harness 的鲸鱼、Antigravity 的 App 图标）。这些图标是各公司的商标，这里只用来标明会话来自哪个产品。
 
 ## 常见问题
 

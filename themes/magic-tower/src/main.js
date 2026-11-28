@@ -23,10 +23,10 @@ const isLive = (s) => s.status === 'running' || s.status === 'waiting'
 const ST = TX.st
 
 // ============================================================ 会话
-// { type: 'desk:sessions', primary, lowPower, sessions: [{ id, kind: 'claude'|'codex'|'dsh', name, status, progress, startedAt, endedAt? }] }
+// { type: 'desk:sessions', primary, lowPower, sessions: [{ id, kind: 'claude'|'codex'|'dsh'|'antigravity', name, status, progress, startedAt, endedAt? }] }
 let sessions = []
 function valid(s) {
-  return s && typeof s.id === 'string' && (s.kind === 'claude' || s.kind === 'codex' || s.kind === 'dsh') && s.status in ST && typeof s.startedAt === 'number'
+  return s && typeof s.id === 'string' && (s.kind === 'claude' || s.kind === 'codex' || s.kind === 'dsh' || s.kind === 'antigravity') && s.status in ST && typeof s.startedAt === 'number'
 }
 function setSessions(list) {
   sessions = list.filter(valid).map((s) => ({ ...s, name: String(s.name ?? ''), progress: String(s.progress ?? '') }))
@@ -111,6 +111,7 @@ if (DEMO) {
     claude: ZH ? ['读取 saver.ts', '搜索 "sessionStatus"', '编辑 main.ts', '写入 README.md', 'Bash npm test', 'subagent：查 Codex 日志格式', '思考中…'] : ['Read saver.ts', 'Search "sessionStatus"', 'Edit main.ts', 'Write README.md', 'Bash npm test', 'Subagent: check Codex log format', 'Thinking…'],
     codex: ['exec rg -n "saver" src', 'apply_patch', 'exec npm run build', 'exec gh pr view 10', ZH ? '推理中…' : 'Reasoning…', 'exec npx vitest run'],
     dsh: ['bash npm test', 'read_file agents.js', 'edit_file saver.js', ZH ? '思考中…' : 'Thinking…', 'web_search zstd frame format'],
+    antigravity: ['run_command npm test', 'read_file agents.js', 'edit_file main.js', ZH ? '思考中…' : 'Thinking…', 'search_web protobuf wire format'],
   }
   const demo = []
   let seq = 0
@@ -207,8 +208,8 @@ if (DEMO) {
     setSessions(demo)
   }
   const NAMES = ZH
-    ? { claude: ['重构 IM 限流', '写屏保单测', '修书房月光'], codex: ['迁移 vite 6', 'review PR #11', '补 README'], dsh: ['整理 changelog', '修 CI', '写插件文档'] }
-    : { claude: ['Refactor rate limiter', 'Write screen saver tests', 'Fix study moonlight'], codex: ['Migrate to Vite 6', 'review PR #11', 'Update README'], dsh: ['Tidy the changelog', 'Fix CI', 'Write plugin docs'] }
+    ? { claude: ['重构 IM 限流', '写屏保单测', '修书房月光'], codex: ['迁移 vite 6', 'review PR #11', '补 README'], dsh: ['整理 changelog', '修 CI', '写插件文档'], antigravity: ['接 Antigravity 会话', '修登录页', '迁移数据库'] }
+    : { claude: ['Refactor rate limiter', 'Write screen saver tests', 'Fix study moonlight'], codex: ['Migrate to Vite 6', 'review PR #11', 'Update README'], dsh: ['Tidy the changelog', 'Fix CI', 'Write plugin docs'], antigravity: ['Hook up Antigravity sessions', 'Fix the login page', 'Migrate the database'] }
   dev.addEventListener('click', (e) => {
     const a = e.target.closest('button')?.dataset.a
     if (!a) return
@@ -216,7 +217,7 @@ if (DEMO) {
     if (a === 'pure') return void setPure(!document.body.classList.contains('pure'))
     if (a.startsWith('touch:')) return void touchedDemo(a.slice(6))
     auto = false
-    if (a === 'claude' || a === 'codex' || a === 'dsh') add(a, pick(NAMES[a]))
+    if (a === 'claude' || a === 'codex' || a === 'dsh' || a === 'antigravity') add(a, pick(NAMES[a]))
     if (a === 'done') finish(live[0], 'done')
     if (a === 'abort') finish(live[0], 'aborted')
     if (a === 'wait' && live[0]) Object.assign(live[0], { status: 'waiting', progress: D.wait2 })

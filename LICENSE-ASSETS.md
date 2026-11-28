@@ -35,9 +35,10 @@ These keep their own terms and are not covered by the CC license above:
 
 - **three.js** (bundled in `themes/subspace/index.html` and `themes/magic-tower/index.html`): MIT, © three.js authors.
 - **DeepSeek Harness whale** (`themes/subspace/assets/dsh.svg`, `themes/magic-tower/assets/dsh.svg`): MIT, © 2026 DeepSeek (`@deepseek-ai/dsh-web-frontend`).
-- **Claude mark** (`assets/claude.png`) and **Codex app icon** (`assets/codex.png`): trademarks of Anthropic and OpenAI.
+- **Claude mark** (`assets/claude.png`), **Codex app icon** (`assets/codex.png`) and **Antigravity app icon**
+  (`assets/antigravity.png`): trademarks of Anthropic, OpenAI and Google.
   The DeepSeek whale is also a DeepSeek trademark. They are used only to identify which product a session belongs to.
   This project is not affiliated with or endorsed by these companies.
 
 以上第三方内容按各自的条款，不在上面的 CC 授权范围内：three.js 是 MIT；DeepSeek Harness 鲸鱼图标是 MIT（© 2026 DeepSeek）；
-Claude、Codex 图标和 DeepSeek 鲸鱼是各自公司的商标，只用来标出会话属于哪个产品，本项目与这些公司没有关联。
+Claude、Codex、Antigravity 图标和 DeepSeek 鲸鱼是各自公司的商标，只用来标出会话属于哪个产品，本项目与这些公司没有关联。
