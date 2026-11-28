@@ -180,7 +180,7 @@ local files every 2 seconds; nothing is sent anywhere.
 | Claude Code | `~/.claude/sessions/<pid>.json`, `~/.claude/projects/**.jsonl` | process alive and status busy; waiting when status asks for permission or input |
 | OpenAI Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, `~/.codex/session_index.jsonl` | `task_started` without `task_complete` / `turn_aborted` |
 | DeepSeek Harness | `$DSH_HOME/sessions/*/*/session.v4.jsonl.zstd` + `session.lock` | a dsh process holds the session lock and the last `turn/start` has no `turn/end`; waiting on an open `approval/asked` or `ask_user_question` |
-| Google Antigravity | `~/.gemini/antigravity/presence/<id>.lock`, `conversation_summaries.db`, `conversations/<id>.db` (SQLite, read-only) | the Antigravity language server holds the conversation's presence lock; waiting when the last planned tool call is `ask_question` |
+| Google Antigravity | `~/.gemini/antigravity/presence/<id>.lock`, `conversation_summaries.db`, `conversations/<id>.db` (SQLite, read-only) | the Antigravity language server holds the conversation's presence lock and the summary status is `CASCADE_RUN_STATUS_RUNNING`; waiting when the last planned tool call is `ask_question` |
 
 The theme shows each product's own icon (the Claude mark, the Codex app icon, the DeepSeek Harness whale and the Antigravity app icon) to label
 sessions. They are trademarks of their owners and are used only to identify those products.

@@ -112,10 +112,16 @@ describe('AgentWatcher 读 Antigravity', () => {
       { id: `antigravity:${A}`, kind: 'antigravity', name: '模型与渠道记分板扩展', status: 'running', progress: 'run_command npm test', startedAt: Date.parse('2026-11-28T11:31:02.030Z') },
     ])
 
-    // 跑完：锁放了（摘要表还没来得及改成 IDLE 也一样）
+    // 跑完：会话还开着（锁不放），摘要表写成 IDLE → 已完成
     steps(A, [{ step_type: STEP.USER_INPUT }, { step_type: STEP.PLANNER, step_payload: payload() }])
-    held = new Set()
+    summaries([{ id: A, title: '模型与渠道记分板扩展', status: 'CASCADE_RUN_STATUS_IDLE' }])
     expect(w.poll()[0]).toMatchObject({ status: 'done', progress: '本轮完成', endedAt: 9999 })
+
+    // 再开一轮，跑着跑着 Antigravity 退了（锁放了，摘要表还写着 RUNNING）
+    summaries([{ id: A, title: '模型与渠道记分板扩展' }])
+    expect(w.poll()[0].status).toBe('running')
+    held = new Set()
+    expect(w.poll()[0].status).toBe('done')
 
     // 再开一轮，被停了
     held = new Set([la])
@@ -125,19 +131,19 @@ describe('AgentWatcher 读 Antigravity', () => {
     expect(w.poll()[0]).toMatchObject({ status: 'aborted', progress: '被中断' })
   })
 
-  it('等你回答、被杀掉、subagent、摘要表里还没有', () => {
-    summaries([{ id: A, title: '问问题' }, { id: B, parent: A, depth: 1 }, { id: C, killed: true, title: '被杀' }])
+  it('等你回答、被杀掉、subagent、摘要表里还没有、开着但空闲', () => {
+    const E = 'eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee'
+    summaries([{ id: A, title: '问问题' }, { id: B, parent: A, depth: 1 }, { id: C, killed: true, title: '被杀' }, { id: E, status: 'CASCADE_RUN_STATUS_IDLE' }])
     steps(A, [{ step_type: STEP.PLANNER, step_payload: payload(call('ask_question', { questions: ['?'] })) }])
     const D = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
     const T = Date.now() - 60_000
-    const held = new Set([lock(A), lock(B), lock(C), lock(D, T)])
+    const held = new Set([lock(A), lock(B), lock(C), lock(D, T), lock(E)])
     const w = new AgentWatcher({ home: HOME, agLocks: () => held, dshLocks: () => new Set(), alive: () => false, codexAlive: () => false, lang: 'en' })
     const got = w.poll()
-    expect(got.map((s) => [s.id.slice(12, 20), s.status, s.name, s.progress])).toEqual([
-      ['2b95b63e', 'waiting', '问问题', 'Waiting for your answer'],
-      ['aaaaaaaa', 'running', 'Antigravity', 'Thinking…'], // 刚开的会话：摘要表里还没有，开始时间用锁文件的时间
-    ])
-    expect(got[1].startedAt).toBe(T)
+    // 只有 A：B 是 subagent，C 被杀了，D 摘要表里还没有（等它写进来），E 开着但空闲
+    expect(got.map((s) => [s.id.slice(12, 20), s.status, s.name, s.progress])).toEqual([['2b95b63e', 'waiting', '问问题', 'Waiting for your answer']])
+    summaries([{ id: D, title: '' }])
+    expect(w.poll().find((s) => s.id.endsWith(D))).toMatchObject({ status: 'running', name: 'proj', startedAt: Date.parse('2026-11-28T11:31:02.030Z') })
   })
 
   it('很久以前的锁不去 lsof；没有 Antigravity 目录就是空的', () => {

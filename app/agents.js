@@ -13,10 +13,12 @@
 //   会话被一个 dsh 进程打开时，那个进程一直用 flock 锁着同目录的 session.lock（进程没了内核就放锁，不会留死锁）：
 //   有进程开着 session.lock（lsof）= 会话还在；最后一个 turn/start 后面没有 turn/end = 这一轮在跑；
 //   还有没回复的 approval/asked、没回答的 ask_user_question = 等你确认。名字取最后一个 session/title。
-// - Antigravity：~/.gemini/antigravity/presence/<会话>.lock，会话这一轮在跑时 language_server 一直开着它（lsof），
-//   跑完、被停、Antigravity 退了就放掉（文件留着，每轮开始时刷新时间）：有进程开着 = 在跑。
-//   名字、这一轮几点开始、是不是 subagent、有没有被杀掉，看 conversation_summaries.db（SQLite，Antigravity 自己的会话列表，
-//   隔几步才写一次，所以不拿它判断在不在跑）。进展取 conversations/<会话>.db 最后一步里的工具调用
+// - Antigravity：~/.gemini/antigravity/presence/<会话>.lock，会话被 language_server 载入时它一直开着（lsof），
+//   Antigravity 退了、会话被卸下就放掉（文件留着，每轮开始时刷新时间）。这一轮跑完、会话还开着时锁不放，
+//   所以还要看 conversation_summaries.db（SQLite，Antigravity 自己的会话列表）的 status：
+//   锁被开着、status 是 CASCADE_RUN_STATUS_RUNNING / BUSY 才算在跑（这张表隔几步写一次，跑完那一刻会写成 IDLE）。
+//   名字、这一轮几点开始、是不是 subagent、有没有被杀掉也从这张表来；表里还没有的新会话等它写进来再算。
+//   进展取 conversations/<会话>.db 最后一步里的工具调用
 //   （protobuf：{1: call_…, 2: 工具名, 3: JSON 参数}）；步骤跑完才写进库，所以最后一步要是「打算调工具」，那就是正在调它，
 //   打算调的是 ask_question = 等你回答。最后一步被取消 / 出错 = 中断。
 //   SQLite 用 Node 自带的 node:sqlite（Electron 45 / Node 24 有）；没有就只有「在跑」，没名字和进展。
@@ -432,6 +434,7 @@ function lockProbe() {
 
 // ---------------------------------------------------------------- Antigravity
 const AG_DAYS = 7 // presence 锁文件每轮开始刷新时间：只看最近几天动过的
+const AG_RUNNING = new Set(['CASCADE_RUN_STATUS_RUNNING', 'CASCADE_RUN_STATUS_BUSY'])
 const AG_STEP_PLANNER = 15 // CORTEX_STEP_TYPE_PLANNER_RESPONSE：模型这一步说的话、打算调的工具
 const AG_STEP_ERROR = 17 // CORTEX_STEP_TYPE_ERROR_MESSAGE：接口报错（会自己重试，最后一步还是它 = 这一轮出错停了）
 const AG_STEP_ABORTED = new Set([6, 7, 12]) // CORTEX_STEP_STATUS_CANCELED / ERROR / INTERRUPTED
@@ -921,7 +924,8 @@ export class AgentWatcher {
       const r = meta.get(id)
       if (r && (r.parent_conversation_id || Number(r.nesting_depth) > 0)) continue // subagent 的会话算在父会话里
       const killed = !!r && (Number(r.killed) > 0 || r.status === 'CASCADE_RUN_STATUS_CANCELING')
-      const live = held.has(lock) && !killed
+      if (!r && !this.tracked.has(key)) continue // 摘要表里还没有：不知道在不在跑，等它写进来
+      const live = held.has(lock) && !killed && AG_RUNNING.has(String(r?.status ?? ''))
       const last = sqliteAll(join(root, 'conversations', `${id}.db`), 'select step_type, status, step_payload from steps order by idx desc limit 1')
       const tail = agTail(last?.[0], this.lang)
       const started = Date.parse(String(r?.last_user_input_time ?? '').replace(' ', 'T'))
